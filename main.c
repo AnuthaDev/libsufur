@@ -1,8 +1,8 @@
-#include <stdlib.h>
-#include <stdio.h>
+#include "libsufur.h"
 
-#include "libusb-1.0/libusb.h"
+int main()
+{
+	enumerate_usb_mass_storage();
 
-int main() {
-	printf("Hello World!");
+	return 0;
 }
