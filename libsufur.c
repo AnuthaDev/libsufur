@@ -8,12 +8,11 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <libfdisk.h>
+#include <libfdisk/libfdisk.h>
 #include <libudev.h>
-#include <libgen.h>
+#include <stdlib.h>
 
 #include "strutils.h"
 
@@ -42,7 +41,7 @@ get_child(
 	return child;
 }
 
-static int enumerate_device(struct udev* udev, const char* device) {
+static int64_t get_drive_size(const char* device) {
 	int error = 0;
 	struct fdisk_context* cxt = fdisk_new_context();
 
@@ -70,47 +69,58 @@ static int enumerate_device(struct udev* udev, const char* device) {
 		return error;
 	}
 
-	struct fdisk_table* tb = fdisk_new_table();
-	error = fdisk_get_partitions(cxt, &tb);
+	// struct fdisk_table* tb = fdisk_new_table();
+	// error = fdisk_get_partitions(cxt, &tb);
+	//
+	// if (error) {
+	// 	printf("Failed to get device partition data\n");
+	// 	return error;
+	// }
 
-	if (error) {
-		printf("Failed to get device partition data\n");
-		return error;
-	}
+	int64_t bytes = fdisk_get_nsectors(cxt) * fdisk_get_sector_size(cxt);
+	// printf("Size: %lu\n", bytes);
+	// printf("%lu partitions found\n", fdisk_table_get_nents(tb));
 
-	uint64_t bytes = fdisk_get_nsectors(cxt) * fdisk_get_sector_size(cxt);
-	printf("Size: %lu\n", bytes);
-	printf("%lu partitions found\n", fdisk_table_get_nents(tb));
-
-	for (int i = 0; i < fdisk_table_get_nents(tb); i++) {
-		struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, i);
-		char* data = NULL;
-		fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &data);
-
-		printf("\n%s\n", data);
-
-		struct udev_device* devc = udev_device_new_from_subsystem_sysname(udev, "block", basename(data));
-
-		const char* date = udev_device_get_property_value(devc, "ID_FS_LABEL_ENC");
-
-		if (!date)
-			printf("Partition label not found\n");
-		else {
-			char* name = strdup(date);
-
-			unhexmangle_to_buffer(name, name, strlen(name) + 1);
-			printf("%s\n", name);
-		}
-	}
+	// for (int i = 0; i < fdisk_table_get_nents(tb); i++) {
+	// 	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, i);
+	// 	char* data = NULL;
+	// 	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &data);
+	//
+	// 	char* type = NULL;
+	// 	fdisk_partition_to_string(pt, cxt, FDISK_FIELD_FSTYPE, &type);
+	//
+	// 	printf("\nType: %s\n", type);
+	//
+	// 	if(!data) {
+	// 		printf("Cannot find information about partition\n");
+	// 		return error;
+	// 	}
+	// 	printf("%s\n", data);
+	//
+	// 	struct udev_device* devc = udev_device_new_from_subsystem_sysname(udev, "block", basename(data));
+	//
+	// 	const char* date = udev_device_get_property_value(devc, "ID_FS_LABEL_ENC");
+	//
+	// 	if (!date)
+	// 		printf("Partition label not found\n");
+	// 	else {
+	// 		char* name = strdup(date);
+	//
+	// 		unhexmangle_to_buffer(name, name, strlen(name) + 1);
+	// 		printf("%s\n", name);
+	// 	}
+	// }
 
 	fdisk_deassign_device(cxt, 0);
 
-	return 0;
+	return bytes;
 }
 
-int enumerate_usb_mass_storage(void) {
-	struct udev* udev = udev_new();
+int enumerate_usb_mass_storage(usb_drive **var) {
 
+	int i = 0, count = 0;
+
+	struct udev* udev = udev_new();
 	struct udev_enumerate* enumerate = udev_enumerate_new(udev);
 
 	udev_enumerate_add_match_subsystem(enumerate, "scsi");
@@ -118,7 +128,14 @@ int enumerate_usb_mass_storage(void) {
 	udev_enumerate_scan_devices(enumerate);
 
 	struct udev_list_entry* devices = udev_enumerate_get_list_entry(enumerate);
-	struct udev_list_entry* entry;
+	struct udev_list_entry* entry, *iter;
+	udev_list_entry_foreach(iter, devices) {
+		count++;
+	}
+
+	*var = (usb_drive*)malloc(sizeof(usb_drive)*count);
+	usb_drive *val = *var;
+
 
 	udev_list_entry_foreach(entry, devices) {
 		const char* path = udev_list_entry_get_name(entry);
@@ -132,12 +149,17 @@ int enumerate_usb_mass_storage(void) {
 					scsi, "usb", "usb_device");
 
 		if (block && scsi_disk && usb) {
-			printf("\n\nscsi: %s %s\n", udev_device_get_sysattr_value(scsi, "vendor"),
-			       udev_device_get_sysattr_value(scsi, "model"));
+			// printf("\n\nscsi: %s %s\n", udev_device_get_sysattr_value(scsi, "vendor"),
+			//        udev_device_get_sysattr_value(scsi, "model"));
 			const char* devnode = udev_device_get_devnode(block);
 
-			printf("%s\n", devnode);
-			enumerate_device(udev, devnode);
+			val[i].devnode = strdup(devnode);
+			val[i].size = get_drive_size(devnode);
+			val[i].vendor_name = strdup(udev_device_get_sysattr_value(scsi, "vendor"));
+			val[i].model_name = strdup(udev_device_get_sysattr_value(scsi, "model"));
+			//printf("%s\n", devnode);
+			i++;
+
 		}
 
 		if (block)
@@ -152,5 +174,5 @@ int enumerate_usb_mass_storage(void) {
 	udev_enumerate_unref(enumerate);
 	udev_unref(udev);
 
-	return 0;
+	return i;
 }

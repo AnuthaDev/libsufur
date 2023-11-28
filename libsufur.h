@@ -7,14 +7,15 @@
 
 #include <stdint.h>
 
-int enumerate_usb_mass_storage();
-
-struct usb_drive {
-	char* devpath;
-	uint64_t size;
+typedef struct usb_drive {
+	char* devnode;
+	int64_t size;
 	char* vendor_name;
 	char* model_name;
-};
+} usb_drive;
+
+int enumerate_usb_mass_storage(usb_drive**);
+
 
 
 #endif //LIBSUFUR_H
