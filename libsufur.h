@@ -17,5 +17,7 @@ typedef struct usb_drive {
 int enumerate_usb_mass_storage(usb_drive**);
 
 
+int format_usb_drive(const usb_drive*);
+
 
 #endif //LIBSUFUR_H

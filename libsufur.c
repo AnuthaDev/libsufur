@@ -16,6 +16,7 @@
 
 #include "strutils.h"
 
+#define MSFT_BASIC_DATA_PART "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
 // static size_t unhexmangle_to_buffer(const char *s, char *buf, size_t len);
 
 static struct udev_device*
@@ -175,4 +176,62 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 	udev_unref(udev);
 
 	return i;
+}
+
+int format_usb_drive(const usb_drive* drive) {
+
+	const char* device = drive->devnode;
+	int error = 0;
+	struct fdisk_context* cxt = fdisk_new_context();
+
+	if (!cxt)
+		return error = -1;
+
+	error = faccessat(-1, device, F_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Device does not exist\n");
+		return error;
+	}
+
+	error = faccessat(-1, device, R_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Please run the program as root\n");
+		return error;
+	}
+
+	error = fdisk_assign_device(cxt, device, 0);
+
+	if (error) {
+		printf("Failed to assign fdisk device\n");
+		return error;
+	}
+
+	fdisk_delete_all_partitions(cxt);
+
+	struct fdisk_partition *part = fdisk_new_partition ();
+	fdisk_partition_partno_follow_default (part, 1 );
+	fdisk_partition_start_follow_default(part, 1);
+	fdisk_partition_end_follow_default(part, 1);
+
+	fdisk_partition_set_name(part, "sufur_success");
+
+	struct fdisk_label* lb = fdisk_get_label(cxt, NULL);
+	struct fdisk_parttype *type = fdisk_label_get_parttype_from_string(lb, MSFT_BASIC_DATA_PART);
+
+	fdisk_partition_set_type(part, type);
+
+	error = fdisk_add_partition(cxt, part, NULL);
+
+	if (error) {
+		printf("Failed to format device\n");
+		return error;
+	}
+
+	fdisk_write_disklabel(cxt);
+
+	fdisk_deassign_device(cxt, 0);
+
+	return 0;
 }
