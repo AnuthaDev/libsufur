@@ -13,5 +13,7 @@ int main()
 		printf("%s\n", val[i].devnode);
 	}
 
+	//format_usb_drive(val);
+
 	return 0;
 }

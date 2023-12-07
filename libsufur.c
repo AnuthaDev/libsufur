@@ -13,6 +13,7 @@
 #include <libfdisk/libfdisk.h>
 #include <libudev.h>
 #include <stdlib.h>
+#include <spawn.h>
 
 #include "strutils.h"
 
@@ -178,6 +179,61 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 	return i;
 }
 
+static int create_fat_partition(struct fdisk_context* cxt) {
+	int error = 0;
+	struct fdisk_table* tb = fdisk_new_table();
+	error = fdisk_get_partitions(cxt, &tb);
+
+	if (error) {
+		printf("Failed to get device partition data\n");
+		return error;
+	}
+
+	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, 0);
+	char* part_node = NULL;
+	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+	printf("\nDevice: %s\n", part_node);
+
+
+	pid_t pid;
+	char *argv[] = {"mkfs.fat", part_node, (char*)0};
+
+	char * const environ[] = {NULL};
+	int status = posix_spawn(&pid, "/usr/sbin/mkfs.fat", NULL, NULL, argv, environ);
+	if(status != 0) {
+		fprintf(stderr, strerror(status));
+		return 1;
+	}
+	return 0;
+}
+
+static int reinit_drive_partitions(const usb_drive* drive, struct fdisk_context* cxt) {
+	int error = 0;
+	struct fdisk_partition *part = fdisk_new_partition ();
+	fdisk_partition_partno_follow_default (part, 1 );
+	fdisk_partition_start_follow_default(part, 1);
+	fdisk_partition_end_follow_default(part, 1);
+
+	fdisk_partition_set_name(part, "sufur_success");
+
+	struct fdisk_label* lb = fdisk_get_label(cxt, NULL);
+	struct fdisk_parttype *type = fdisk_label_get_parttype_from_string(lb, MSFT_BASIC_DATA_PART);
+
+	fdisk_partition_set_type(part, type);
+
+	error = fdisk_add_partition(cxt, part, NULL);
+
+	if (error) {
+		printf("Failed to format device\n");
+		return error;
+	}
+
+	fdisk_write_disklabel(cxt);
+
+	create_fat_partition(cxt);
+	return 0;
+}
+
 int format_usb_drive(const usb_drive* drive) {
 
 	const char* device = drive->devnode;
@@ -210,26 +266,7 @@ int format_usb_drive(const usb_drive* drive) {
 
 	fdisk_delete_all_partitions(cxt);
 
-	struct fdisk_partition *part = fdisk_new_partition ();
-	fdisk_partition_partno_follow_default (part, 1 );
-	fdisk_partition_start_follow_default(part, 1);
-	fdisk_partition_end_follow_default(part, 1);
-
-	fdisk_partition_set_name(part, "sufur_success");
-
-	struct fdisk_label* lb = fdisk_get_label(cxt, NULL);
-	struct fdisk_parttype *type = fdisk_label_get_parttype_from_string(lb, MSFT_BASIC_DATA_PART);
-
-	fdisk_partition_set_type(part, type);
-
-	error = fdisk_add_partition(cxt, part, NULL);
-
-	if (error) {
-		printf("Failed to format device\n");
-		return error;
-	}
-
-	fdisk_write_disklabel(cxt);
+	reinit_drive_partitions(drive, cxt);
 
 	fdisk_deassign_device(cxt, 0);
 
