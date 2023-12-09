@@ -17,7 +17,7 @@ typedef struct usb_drive {
 int enumerate_usb_mass_storage(usb_drive**);
 
 
-int format_usb_drive(const usb_drive*);
+int make_bootable(const usb_drive*, const char*);
 
 
 #endif //LIBSUFUR_H
