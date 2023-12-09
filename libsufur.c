@@ -14,6 +14,7 @@
 #include <libudev.h>
 #include <stdlib.h>
 #include <spawn.h>
+#include <wait.h>
 
 #include "strutils.h"
 
@@ -179,7 +180,7 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 	return i;
 }
 
-static int create_fat_partition(struct fdisk_context* cxt) {
+static int create_fat_filesystem(struct fdisk_context* cxt) {
 	int error = 0;
 	struct fdisk_table* tb = fdisk_new_table();
 	error = fdisk_get_partitions(cxt, &tb);
@@ -195,6 +196,19 @@ static int create_fat_partition(struct fdisk_context* cxt) {
 	printf("\nDevice: %s\n", part_node);
 
 
+	pid_t pid2;
+	char *argv2[] = {"umount", part_node, (char*)0};
+
+	char * const environ2[] = {NULL};
+	int status2 = posix_spawn(&pid2, "/usr/bin/umount", NULL, NULL, argv2, environ2);
+	if(status2 != 0) {
+		fprintf(stderr, strerror(status2));
+		return 1;
+	}
+
+	wait(NULL);
+
+
 	pid_t pid;
 	char *argv[] = {"mkfs.fat", part_node, (char*)0};
 
@@ -204,10 +218,11 @@ static int create_fat_partition(struct fdisk_context* cxt) {
 		fprintf(stderr, strerror(status));
 		return 1;
 	}
+
 	return 0;
 }
 
-static int reinit_drive_partitions(const usb_drive* drive, struct fdisk_context* cxt) {
+static int create_default_partition(const usb_drive* drive, struct fdisk_context* cxt) {
 	int error = 0;
 	struct fdisk_partition *part = fdisk_new_partition ();
 	fdisk_partition_partno_follow_default (part, 1 );
@@ -230,7 +245,7 @@ static int reinit_drive_partitions(const usb_drive* drive, struct fdisk_context*
 
 	fdisk_write_disklabel(cxt);
 
-	create_fat_partition(cxt);
+	create_fat_filesystem(cxt);
 	return 0;
 }
 
@@ -266,7 +281,7 @@ int format_usb_drive(const usb_drive* drive) {
 
 	fdisk_delete_all_partitions(cxt);
 
-	reinit_drive_partitions(drive, cxt);
+	create_default_partition(drive, cxt);
 
 	fdisk_deassign_device(cxt, 0);
 
