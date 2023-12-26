@@ -199,6 +199,8 @@ static int create_fat_filesystem(struct fdisk_context* cxt) {
 	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
 	printf("\nDevice: %s\n", part_node);
 
+	fdisk_deassign_device(cxt, 0);
+
 
 	pid_t pid2;
 	char *argv2[] = {"umount", part_node, (char*)0};
@@ -251,6 +253,8 @@ static int create_default_partition(const usb_drive* drive, struct fdisk_context
 
 	fdisk_write_disklabel(cxt);
 
+	fdisk_reread_partition_table(cxt);
+
 	create_fat_filesystem(cxt);
 	return 0;
 }
@@ -289,7 +293,11 @@ int format_usb_drive(const usb_drive* drive) {
 
 	create_default_partition(drive, cxt);
 
-	fdisk_deassign_device(cxt, 0);
+	/* TODO: Remove the deassign call inside create_fat_partition when
+	 * partitions can be created without mkfs. Currently done this
+	 * way because otherwise mkfs fails with error "Device busy"
+	 */
+	//fdisk_deassign_device(cxt, 0);
 
 	return 0;
 }
