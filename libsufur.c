@@ -418,8 +418,9 @@ static int unmount_ALL() {
 }
 
 int make_bootable(const usb_drive* drive, const char* isopath) {
+	setbuf(stdout, NULL);
 
-
+	printf("Formatting USB drive\n");
 	format_usb_drive(drive);
 
 	if (!is_valid_ISO(isopath)) {
@@ -427,13 +428,19 @@ int make_bootable(const usb_drive* drive, const char* isopath) {
 		printf("Invalid ISO file\n");
 	}
 
+	printf("Mounting ISO\n");
 	mount_ISO(isopath);
 
+	printf("Mounting Device\n");
 	mount_device(drive);
 
+	printf("Copying ISO files\n");
 	copy_ISO_files();
 
+	printf("Unmounting All");
 	unmount_ALL();
+
+	printf("Done\n");
 
 	return 0;
 
