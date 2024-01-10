@@ -201,7 +201,8 @@ static int create_fat_filesystem(struct fdisk_context* cxt) {
 
 	fdisk_deassign_device(cxt, 0);
 
-
+	// TODO: This is wrong, the mounts should be removed for all partitions
+	// inside `format_usb_drive`. See wipefs, sfdisk --force --delete
 	pid_t pid2;
 	char *argv2[] = {"umount", part_node, (char*)0};
 
@@ -230,6 +231,46 @@ static int create_fat_filesystem(struct fdisk_context* cxt) {
 	return 0;
 }
 
+static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_context* cxt) {
+	int error = 0;
+	struct fdisk_partition *fat32_part = fdisk_new_partition();
+	fdisk_partition_set_partno(fat32_part, 1);
+	// 2048: Size of partition
+	// 2048: Extra space so libfdisk can align at 1MiB boundary
+	fdisk_partition_set_start(fat32_part, fdisk_get_nsectors(cxt)-2048-2048);
+	fdisk_partition_set_size(fat32_part, 2048);
+	fdisk_partition_end_follow_default(fat32_part, 1);
+
+	fdisk_partition_set_name(fat32_part, "sufur_fat32");
+
+	struct fdisk_label* lbfat = fdisk_get_label(cxt, NULL);
+	struct fdisk_parttype *typefat = fdisk_label_get_parttype_from_string(lbfat, MSFT_BASIC_DATA_PART);
+
+	fdisk_partition_set_type(fat32_part, typefat);
+
+	error = fdisk_add_partition(cxt, fat32_part, NULL);
+
+
+
+
+	struct fdisk_partition *ntfs_part = fdisk_new_partition();
+	//fdisk_partition_partno_follow_default (ntfs_part, 1 );
+	fdisk_partition_set_partno(ntfs_part, 0);
+	fdisk_partition_start_follow_default(ntfs_part, 1);
+	fdisk_partition_end_follow_default(ntfs_part, 1);
+
+	fdisk_partition_set_name(ntfs_part, "sufur_ntfs");
+
+	struct fdisk_label* lb = fdisk_get_label(cxt, NULL);
+	struct fdisk_parttype *type = fdisk_label_get_parttype_from_string(lb, MSFT_BASIC_DATA_PART);
+
+	fdisk_partition_set_type(ntfs_part, type);
+
+	error = fdisk_add_partition(cxt, ntfs_part, NULL);
+	fdisk_write_disklabel(cxt);
+
+	return error;
+}
 static int create_default_partition(const usb_drive* drive, struct fdisk_context* cxt) {
 	int error = 0;
 	struct fdisk_partition *part = fdisk_new_partition ();
@@ -257,6 +298,11 @@ static int create_default_partition(const usb_drive* drive, struct fdisk_context
 
 	create_fat_filesystem(cxt);
 	return 0;
+}
+
+void create_new_label(const usb_drive* drive, struct fdisk_context* cxt) {
+	fdisk_create_disklabel(cxt, "gpt");
+	fdisk_write_disklabel(cxt);
 }
 
 int format_usb_drive(const usb_drive* drive) {
@@ -291,7 +337,9 @@ int format_usb_drive(const usb_drive* drive) {
 
 	fdisk_delete_all_partitions(cxt);
 
-	create_default_partition(drive, cxt);
+	create_new_label(drive, cxt);
+	//create_default_partition(drive, cxt);
+	create_windows_usb_partitions(drive, cxt);
 
 	/* TODO: Remove the deassign call inside create_fat_partition when
 	 * partitions can be created without mkfs. Currently done this
@@ -429,16 +477,16 @@ int make_bootable(const usb_drive* drive, const char* isopath) {
 	}
 
 	printf("Mounting ISO\n");
-	mount_ISO(isopath);
+	//mount_ISO(isopath);
 
 	printf("Mounting Device\n");
-	mount_device(drive);
+	//mount_device(drive);
 
 	printf("Copying ISO files\n");
-	copy_ISO_files();
+	//copy_ISO_files();
 
 	printf("Unmounting All");
-	unmount_ALL();
+	//unmount_ALL();
 
 	printf("Done\n");
 

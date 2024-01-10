@@ -15,7 +15,7 @@ int main()
 
 	//format_usb_drive(val);
 
-	make_bootable(val, "/home/thakur/Downloads/debian-12.2.0-amd64-netinst.iso" );
+	make_bootable(val, "/home/thakur/Downloads/debian-12.4.0-amd64-netinst.iso" );
 
 	return 0;
 }
