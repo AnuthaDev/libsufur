@@ -20,6 +20,7 @@
 #include "strutils.h"
 
 #define MSFT_BASIC_DATA_PART "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
+#define EFI_SYSTEM_PART "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 
 #define ISO_MNT_PATH "/mnt/sufurISO"
 #define USB_MNT_PATH "/mnt/sufurUSB"
@@ -233,6 +234,19 @@ static int create_fat_filesystem(struct fdisk_context* cxt) {
 
 static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_context* cxt) {
 	int error = 0;
+
+
+	struct fdisk_labelitem *item = fdisk_new_labelitem();
+	fdisk_get_disklabel_item(cxt, GPT_LABELITEM_ID, item);
+	const char * diskuuid = NULL;
+	fdisk_labelitem_get_data_string(item,  &diskuuid);
+	printf("Disk UUID: %s\n", diskuuid);
+
+	fdisk_unref_labelitem(item);
+
+
+
+
 	struct fdisk_partition *fat32_part = fdisk_new_partition();
 	fdisk_partition_set_partno(fat32_part, 1);
 	// 2048: Size of partition
@@ -244,13 +258,15 @@ static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_co
 	fdisk_partition_set_name(fat32_part, "sufur_fat32");
 
 	struct fdisk_label* lbfat = fdisk_get_label(cxt, NULL);
-	struct fdisk_parttype *typefat = fdisk_label_get_parttype_from_string(lbfat, MSFT_BASIC_DATA_PART);
+	struct fdisk_parttype *typefat = fdisk_label_get_parttype_from_string(lbfat, EFI_SYSTEM_PART);
 
 	fdisk_partition_set_type(fat32_part, typefat);
 
 	error = fdisk_add_partition(cxt, fat32_part, NULL);
 
-
+	fdisk_get_partition(cxt, 1, &fat32_part);
+	const char * uuid = fdisk_partition_get_uuid (fat32_part);
+	printf("ESP UUID: %s\n", uuid);
 
 
 	struct fdisk_partition *ntfs_part = fdisk_new_partition();
@@ -267,6 +283,12 @@ static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_co
 	fdisk_partition_set_type(ntfs_part, type);
 
 	error = fdisk_add_partition(cxt, ntfs_part, NULL);
+
+	fdisk_get_partition(cxt, 0, &ntfs_part);
+	const char * uuid2 = fdisk_partition_get_uuid (ntfs_part);
+	printf("WinDrive UUID: %s\n", uuid2);
+
+
 	fdisk_write_disklabel(cxt);
 
 	return error;
