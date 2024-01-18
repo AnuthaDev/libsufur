@@ -18,10 +18,9 @@
 
 #include "utils.h"
 #include "wtg.h"
+#include "partition.h"
 #include "strutils.h"
 
-#define MSFT_BASIC_DATA_PART "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
-#define EFI_SYSTEM_PART "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 
 #define ISO_MNT_PATH "/mnt/sufurISO"
 #define USB_MNT_PATH "/mnt/sufurUSB"
@@ -350,10 +349,6 @@ static int create_default_partition(const usb_drive* drive, struct fdisk_context
 	return 0;
 }
 
-void create_new_label(const usb_drive* drive, struct fdisk_context* cxt) {
-	fdisk_create_disklabel(cxt, "gpt");
-	fdisk_write_disklabel(cxt);
-}
 
 int format_usb_drive(const usb_drive* drive) {
 
@@ -387,10 +382,10 @@ int format_usb_drive(const usb_drive* drive) {
 
 	fdisk_delete_all_partitions(cxt);
 
-	create_new_label(drive, cxt);
-	//create_default_partition(drive, cxt);
-	create_windows_usb_partitions(drive, cxt);
-
+	create_gpt_label(cxt);
+	create_fst_partition(cxt);
+	//create_windows_to_go_partitions(cxt);
+	//create_dual_fst_partitions(cxt);
 	/* TODO: Remove the deassign call inside create_fat_partition when
 	 * partitions can be created without mkfs. Currently done this
 	 * way because otherwise mkfs fails with error "Device busy"
@@ -542,5 +537,33 @@ int make_bootable(const usb_drive* drive, const char* isopath) {
 
 	return 0;
 
+}
+
+int make_windows_to_go(const usb_drive* drive, const char* isopath) {
+	setbuf(stdout, NULL);
+
+	printf("Formatting USB drive\n");
+	format_usb_drive(drive);
+
+	if (!is_valid_ISO(isopath)) {
+		return -1;
+		printf("Invalid ISO file\n");
+	}
+
+	printf("Mounting ISO\n");
+	//mount_ISO(isopath);
+
+	printf("Mounting Device\n");
+	//mount_device(drive);
+
+	printf("Copying ISO files\n");
+	//copy_ISO_files();
+
+	printf("Unmounting All");
+	//unmount_ALL();
+
+	printf("Done\n");
+
+	return 0;
 
 }

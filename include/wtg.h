@@ -11,4 +11,5 @@ int createBootBCD(char disk_bits[16], char esp_part_bits[16], char boot_part_bit
 
 int createRecBCD(char disk_bits[16], char esp_part_bits[16]);
 
+// int wtg_format_drive(const usb_drive* drive);
 #endif //WTG_H
