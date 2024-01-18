@@ -17,6 +17,7 @@
 #include <wait.h>
 
 #include "utils.h"
+#include "wtg.h"
 #include "strutils.h"
 
 #define MSFT_BASIC_DATA_PART "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
@@ -242,6 +243,16 @@ static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_co
 	fdisk_labelitem_get_data_string(item,  &diskuuid);
 	printf("Disk UUID: %s\n", diskuuid);
 
+
+	unsigned char disk_uuid_bytes[16] = {0};
+
+	uuid_swizzle(diskuuid, disk_uuid_bytes);
+	for (int i = 0;i<16;i++) {
+		printf("%02x ", disk_uuid_bytes[i]);
+	}
+	printf("\n");
+
+
 	fdisk_unref_labelitem(item);
 
 
@@ -265,8 +276,17 @@ static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_co
 	error = fdisk_add_partition(cxt, fat32_part, NULL);
 
 	fdisk_get_partition(cxt, 1, &fat32_part);
-	const char * uuid = fdisk_partition_get_uuid (fat32_part);
-	printf("ESP UUID: %s\n", uuid);
+	const char * espuuid = fdisk_partition_get_uuid (fat32_part);
+	printf("ESP UUID: %s\n", espuuid);
+
+	unsigned char esp_uuid_bytes[16] = {0};
+
+	uuid_swizzle(espuuid, esp_uuid_bytes);
+	for (int i = 0;i<16;i++) {
+		printf("%02x ", esp_uuid_bytes[i]);
+	}
+	printf("\n");
+
 
 
 	struct fdisk_partition *ntfs_part = fdisk_new_partition();
@@ -285,12 +305,20 @@ static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_co
 	error = fdisk_add_partition(cxt, ntfs_part, NULL);
 
 	fdisk_get_partition(cxt, 0, &ntfs_part);
-	const char * uuid2 = fdisk_partition_get_uuid (ntfs_part);
-	printf("WinDrive UUID: %s\n", uuid2);
+	const char * windrvuuid = fdisk_partition_get_uuid (ntfs_part);
+	printf("WinDrive UUID: %s\n", windrvuuid);
 
+	unsigned char windrv_uuid_bytes[16] = {0};
+
+	uuid_swizzle(windrvuuid, windrv_uuid_bytes);
+	for (int i = 0;i<16;i++) {
+		printf("%02x ", windrv_uuid_bytes[i]);
+	}
+	printf("\n");
 
 	fdisk_write_disklabel(cxt);
 
+	createBootBCD(disk_uuid_bytes, esp_uuid_bytes, windrv_uuid_bytes);
 	return error;
 }
 static int create_default_partition(const usb_drive* drive, struct fdisk_context* cxt) {
