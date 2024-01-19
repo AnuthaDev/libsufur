@@ -55,7 +55,7 @@ int create_dual_fst_partitions(struct fdisk_context* cxt) {
 
 	fdisk_partition_set_name(fat32_part, "sufur_fat32");
 
-	struct fdisk_parttype *typefat = fdisk_label_get_parttype_from_string(label, EFI_SYSTEM_PART);
+	struct fdisk_parttype *typefat = fdisk_label_get_parttype_from_string(label, MSFT_BASIC_DATA_PART);
 	fdisk_partition_set_type(fat32_part, typefat);
 
 	error = fdisk_add_partition(cxt, fat32_part, NULL);
@@ -85,17 +85,17 @@ int create_windows_to_go_partitions(struct fdisk_context* cxt) {
 
 	struct fdisk_label* label = fdisk_get_label(cxt, NULL);
 
-	struct fdisk_partition *fat32_part = fdisk_new_partition();
-	fdisk_partition_partno_follow_default (fat32_part, 1 );
-	fdisk_partition_start_follow_default(fat32_part, 1);
-	fdisk_partition_set_size(fat32_part, (256 * MIB)/fdisk_get_sector_size(cxt));
+	struct fdisk_partition *esp_part = fdisk_new_partition();
+	fdisk_partition_partno_follow_default (esp_part, 1 );
+	fdisk_partition_start_follow_default(esp_part, 1);
+	fdisk_partition_set_size(esp_part, (256 * MIB)/fdisk_get_sector_size(cxt));
 
-	fdisk_partition_set_name(fat32_part, "sufur_fat32");
+	fdisk_partition_set_name(esp_part, "sufur_esp");
 
-	struct fdisk_parttype *typefat = fdisk_label_get_parttype_from_string(label, EFI_SYSTEM_PART);
-	fdisk_partition_set_type(fat32_part, typefat);
+	struct fdisk_parttype *esp_type = fdisk_label_get_parttype_from_string(label, EFI_SYSTEM_PART);
+	fdisk_partition_set_type(esp_part, esp_type);
 
-	error = fdisk_add_partition(cxt, fat32_part, NULL);
+	error = fdisk_add_partition(cxt, esp_part, NULL);
 
 
 	struct fdisk_partition *ntfs_part = fdisk_new_partition();

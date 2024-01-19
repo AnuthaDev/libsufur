@@ -15,10 +15,12 @@
 #include <stdlib.h>
 #include <spawn.h>
 #include <wait.h>
+#include <libmount/libmount.h>
 
 #include "utils.h"
 #include "wtg.h"
 #include "partition.h"
+#include "format.h"
 #include "strutils.h"
 
 
@@ -185,52 +187,6 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 	return i;
 }
 
-static int create_fat_filesystem(struct fdisk_context* cxt) {
-	int error = 0;
-	struct fdisk_table* tb = fdisk_new_table();
-	error = fdisk_get_partitions(cxt, &tb);
-
-	if (error) {
-		printf("Failed to get device partition data\n");
-		return error;
-	}
-
-	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, 0);
-	char* part_node = NULL;
-	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
-	printf("\nDevice: %s\n", part_node);
-
-	fdisk_deassign_device(cxt, 0);
-
-	// TODO: This is wrong, the mounts should be removed for all partitions
-	// inside `format_usb_drive`. See wipefs, sfdisk --force --delete
-	pid_t pid2;
-	char *argv2[] = {"umount", part_node, (char*)0};
-
-	char * const environ2[] = {NULL};
-	int status2 = posix_spawn(&pid2, "/usr/bin/umount", NULL, NULL, argv2, environ2);
-	if(status2 != 0) {
-		fprintf(stderr, strerror(status2));
-		return 1;
-	}
-
-	wait(NULL);
-
-
-	pid_t pid;
-	char *argv[] = {"mkfs.fat", part_node, (char*)0};
-
-	char * const environ[] = {NULL};
-	int status = posix_spawn(&pid, "/usr/sbin/mkfs.fat", NULL, NULL, argv, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
-	}
-
-	wait(NULL);
-
-	return 0;
-}
 
 static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_context* cxt) {
 	int error = 0;
@@ -320,37 +276,8 @@ static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_co
 	createBootBCD(disk_uuid_bytes, esp_uuid_bytes, windrv_uuid_bytes);
 	return error;
 }
-static int create_default_partition(const usb_drive* drive, struct fdisk_context* cxt) {
-	int error = 0;
-	struct fdisk_partition *part = fdisk_new_partition ();
-	fdisk_partition_partno_follow_default (part, 1 );
-	fdisk_partition_start_follow_default(part, 1);
-	fdisk_partition_end_follow_default(part, 1);
 
-	fdisk_partition_set_name(part, "sufur_success");
-
-	struct fdisk_label* lb = fdisk_get_label(cxt, NULL);
-	struct fdisk_parttype *type = fdisk_label_get_parttype_from_string(lb, MSFT_BASIC_DATA_PART);
-
-	fdisk_partition_set_type(part, type);
-
-	error = fdisk_add_partition(cxt, part, NULL);
-
-	if (error) {
-		printf("Failed to format device\n");
-		return error;
-	}
-
-	fdisk_write_disklabel(cxt);
-
-	fdisk_reread_partition_table(cxt);
-
-	create_fat_filesystem(cxt);
-	return 0;
-}
-
-
-int format_usb_drive(const usb_drive* drive) {
+static int prepare_fst_drive(const usb_drive* drive) {
 
 	const char* device = drive->devnode;
 	int error = 0;
@@ -386,14 +313,157 @@ int format_usb_drive(const usb_drive* drive) {
 	create_fst_partition(cxt);
 	//create_windows_to_go_partitions(cxt);
 	//create_dual_fst_partitions(cxt);
-	/* TODO: Remove the deassign call inside create_fat_partition when
-	 * partitions can be created without mkfs. Currently done this
-	 * way because otherwise mkfs fails with error "Device busy"
-	 */
-	//fdisk_deassign_device(cxt, 0);
 
-	return 0;
+	struct fdisk_table* tb = fdisk_new_table();
+	error = fdisk_get_partitions(cxt, &tb);
+
+	if (error) {
+		printf("Failed to get device partition data\n");
+		return error;
+	}
+
+	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, 0);
+	char* part_node = NULL;
+	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+	printf("\nDevice: %s\n", part_node);
+
+	fdisk_deassign_device(cxt, 0);
+
+	format_vfat(part_node);
+
+	return error;
 }
+
+static int prepare_dual_fst_drive(const usb_drive* drive) {
+
+	const char* device = drive->devnode;
+	int error = 0;
+	struct fdisk_context* cxt = fdisk_new_context();
+
+	if (!cxt)
+		return error = -1;
+
+	error = faccessat(-1, device, F_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Device does not exist\n");
+		return error;
+	}
+
+	error = faccessat(-1, device, R_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Please run the program as root\n");
+		return error;
+	}
+
+	error = fdisk_assign_device(cxt, device, 0);
+
+	if (error) {
+		printf("Failed to assign fdisk device\n");
+		return error;
+	}
+
+	fdisk_delete_all_partitions(cxt);
+
+	create_gpt_label(cxt);
+	create_dual_fst_partitions(cxt);
+
+	struct fdisk_table* tb = fdisk_new_table();
+	error = fdisk_get_partitions(cxt, &tb);
+
+	if (error) {
+		printf("Failed to get device partition data\n");
+		return error;
+	}
+
+	struct fdisk_partition* ntfs_pt = fdisk_table_get_partition_by_partno(tb, 0);
+	char* ntfs_part_node = NULL;
+	error = fdisk_partition_to_string(ntfs_pt, cxt, FDISK_FIELD_DEVICE, &ntfs_part_node);
+	printf("\nDevice: %s\n", ntfs_part_node);
+
+
+	struct fdisk_partition* vfat_pt = fdisk_table_get_partition_by_partno(tb, 1);
+	char* vfat_part_node = NULL;
+	error = fdisk_partition_to_string(vfat_pt, cxt, FDISK_FIELD_DEVICE, &vfat_part_node);
+	printf("\nDevice: %s\n", vfat_part_node);
+
+	// This must come before format call, otherwise fdisk conflicts with mkfs
+	fdisk_deassign_device(cxt, 0);
+
+	// TODO: This strings may become invalid if we free structs above, make them robust
+	format_ntfs(ntfs_part_node);
+	format_vfat(vfat_part_node);
+
+
+	return error;
+}
+
+static int prepare_windows_to_go_drive(const usb_drive* drive) {
+
+	const char* device = drive->devnode;
+	int error = 0;
+	struct fdisk_context* cxt = fdisk_new_context();
+
+	if (!cxt)
+		return error = -1;
+
+	error = faccessat(-1, device, F_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Device does not exist\n");
+		return error;
+	}
+
+	error = faccessat(-1, device, R_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Please run the program as root\n");
+		return error;
+	}
+
+	error = fdisk_assign_device(cxt, device, 0);
+
+	if (error) {
+		printf("Failed to assign fdisk device\n");
+		return error;
+	}
+
+	fdisk_delete_all_partitions(cxt);
+
+	create_gpt_label(cxt);
+	create_windows_to_go_partitions(cxt);
+
+	struct fdisk_table* tb = fdisk_new_table();
+	error = fdisk_get_partitions(cxt, &tb);
+
+	if (error) {
+		printf("Failed to get device partition data\n");
+		return error;
+	}
+
+	struct fdisk_partition* esp_pt = fdisk_table_get_partition_by_partno(tb, 0);
+	char* esp_part_node = NULL;
+	error = fdisk_partition_to_string(esp_pt, cxt, FDISK_FIELD_DEVICE, &esp_part_node);
+	printf("\nESP Device: %s\n", esp_part_node);
+
+
+	struct fdisk_partition* ntfs_pt = fdisk_table_get_partition_by_partno(tb, 1);
+	char* ntfs_part_node = NULL;
+	error = fdisk_partition_to_string(ntfs_pt, cxt, FDISK_FIELD_DEVICE, &ntfs_part_node);
+	printf("\nNTFS Device: %s\n", ntfs_part_node);
+
+	// This must come before format call, otherwise fdisk conflicts with mkfs
+	fdisk_deassign_device(cxt, 0);
+
+	// TODO: This strings may become invalid if we free structs above, make them robust
+	format_vfat(esp_part_node);
+	format_ntfs(ntfs_part_node);
+
+
+	return error;
+}
+
 
 
 static int mount_ISO(const char* isopath) {
@@ -510,11 +580,30 @@ static int unmount_ALL() {
 	return 0;
 }
 
+int lock_drive(const usb_drive* drive) {
+	mnt_new_context();
+	// pid_t pid2;
+	// char *argv2[] = {"umount", part_node, (char*)0};
+	//
+	// char * const environ2[] = {NULL};
+	// int status2 = posix_spawn(&pid2, "/usr/bin/umount", NULL, NULL, argv2, environ2);
+	// if(status2 != 0) {
+	// 	fprintf(stderr, strerror(status2));
+	// 	return 1;
+	// }
+	//
+	// wait(NULL);
+
+	return 0;
+}
 int make_bootable(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
 
 	printf("Formatting USB drive\n");
-	format_usb_drive(drive);
+	// TODO: Unmount logic here
+
+	lock_drive(drive);
+	prepare_windows_to_go_drive(drive);
 
 	if (!is_valid_ISO(isopath)) {
 		return -1;
@@ -543,7 +632,7 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
 
 	printf("Formatting USB drive\n");
-	format_usb_drive(drive);
+	prepare_fst_drive(drive);
 
 	if (!is_valid_ISO(isopath)) {
 		return -1;
