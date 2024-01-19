@@ -3,6 +3,7 @@
 //
 
 #include "partition.h"
+#include "utils.h"
 
 int create_gpt_label(struct fdisk_context* cxt) {
     fdisk_create_disklabel(cxt, "gpt");
@@ -80,8 +81,30 @@ int create_dual_fst_partitions(struct fdisk_context* cxt) {
 	return error;
 }
 
-int create_windows_to_go_partitions(struct fdisk_context* cxt) {
+int create_windows_to_go_partitions(struct fdisk_context* cxt,  unsigned char uuidarray[3][16]) {
 	int error = 0;
+
+	const int disk_idx = 0, esp_idx = 1, boot_idx = 2;
+
+
+	struct fdisk_labelitem *item = fdisk_new_labelitem();
+	fdisk_get_disklabel_item(cxt, GPT_LABELITEM_ID, item);
+	const char * diskuuid = NULL;
+	fdisk_labelitem_get_data_string(item,  &diskuuid);
+	printf("Disk UUID: %s\n", diskuuid);
+
+
+	uuid_swizzle(diskuuid, uuidarray[disk_idx]);
+	for (int i = 0;i<16;i++) {
+		printf("%02x ", uuidarray[disk_idx][i]);
+	}
+	printf("\n");
+
+	fdisk_unref_labelitem(item);
+
+
+
+
 
 	struct fdisk_label* label = fdisk_get_label(cxt, NULL);
 
@@ -97,6 +120,17 @@ int create_windows_to_go_partitions(struct fdisk_context* cxt) {
 
 	error = fdisk_add_partition(cxt, esp_part, NULL);
 
+	fdisk_get_partition(cxt, 0, &esp_part);
+	const char * espuuid = fdisk_partition_get_uuid (esp_part);
+	printf("ESP UUID: %s\n", espuuid);
+
+
+	uuid_swizzle(espuuid, uuidarray[esp_idx]);
+	for (int i = 0;i<16;i++) {
+		printf("%02x ", uuidarray[esp_idx][i]);
+	}
+	printf("\n");
+
 
 	struct fdisk_partition *ntfs_part = fdisk_new_partition();
 	fdisk_partition_partno_follow_default (ntfs_part, 1 );
@@ -109,6 +143,17 @@ int create_windows_to_go_partitions(struct fdisk_context* cxt) {
 	fdisk_partition_set_type(ntfs_part, type);
 
 	error = fdisk_add_partition(cxt, ntfs_part, NULL);
+
+	fdisk_get_partition(cxt, 1, &ntfs_part);
+	const char * windrvuuid = fdisk_partition_get_uuid (ntfs_part);
+	printf("WinDrive UUID: %s\n", windrvuuid);
+
+
+	uuid_swizzle(windrvuuid, uuidarray[boot_idx]);
+	for (int i = 0;i<16;i++) {
+		printf("%02x ", uuidarray[boot_idx][i]);
+	}
+	printf("\n");
 
 
 	fdisk_write_disklabel(cxt);

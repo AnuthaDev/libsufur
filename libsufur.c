@@ -6,6 +6,7 @@
 #include "libsufur.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -187,96 +188,6 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 	return i;
 }
 
-
-static int create_windows_usb_partitions(const usb_drive* drive, struct fdisk_context* cxt) {
-	int error = 0;
-
-
-	struct fdisk_labelitem *item = fdisk_new_labelitem();
-	fdisk_get_disklabel_item(cxt, GPT_LABELITEM_ID, item);
-	const char * diskuuid = NULL;
-	fdisk_labelitem_get_data_string(item,  &diskuuid);
-	printf("Disk UUID: %s\n", diskuuid);
-
-
-	unsigned char disk_uuid_bytes[16] = {0};
-
-	uuid_swizzle(diskuuid, disk_uuid_bytes);
-	for (int i = 0;i<16;i++) {
-		printf("%02x ", disk_uuid_bytes[i]);
-	}
-	printf("\n");
-
-
-	fdisk_unref_labelitem(item);
-
-
-
-
-	struct fdisk_partition *fat32_part = fdisk_new_partition();
-	fdisk_partition_set_partno(fat32_part, 1);
-	// 2048: Size of partition
-	// 2048: Extra space so libfdisk can align at 1MiB boundary
-	fdisk_partition_set_start(fat32_part, fdisk_get_nsectors(cxt)-2048-2048);
-	fdisk_partition_set_size(fat32_part, 2048);
-	fdisk_partition_end_follow_default(fat32_part, 1);
-
-	fdisk_partition_set_name(fat32_part, "sufur_fat32");
-
-	struct fdisk_label* lbfat = fdisk_get_label(cxt, NULL);
-	struct fdisk_parttype *typefat = fdisk_label_get_parttype_from_string(lbfat, EFI_SYSTEM_PART);
-
-	fdisk_partition_set_type(fat32_part, typefat);
-
-	error = fdisk_add_partition(cxt, fat32_part, NULL);
-
-	fdisk_get_partition(cxt, 1, &fat32_part);
-	const char * espuuid = fdisk_partition_get_uuid (fat32_part);
-	printf("ESP UUID: %s\n", espuuid);
-
-	unsigned char esp_uuid_bytes[16] = {0};
-
-	uuid_swizzle(espuuid, esp_uuid_bytes);
-	for (int i = 0;i<16;i++) {
-		printf("%02x ", esp_uuid_bytes[i]);
-	}
-	printf("\n");
-
-
-
-	struct fdisk_partition *ntfs_part = fdisk_new_partition();
-	//fdisk_partition_partno_follow_default (ntfs_part, 1 );
-	fdisk_partition_set_partno(ntfs_part, 0);
-	fdisk_partition_start_follow_default(ntfs_part, 1);
-	fdisk_partition_end_follow_default(ntfs_part, 1);
-
-	fdisk_partition_set_name(ntfs_part, "sufur_ntfs");
-
-	struct fdisk_label* lb = fdisk_get_label(cxt, NULL);
-	struct fdisk_parttype *type = fdisk_label_get_parttype_from_string(lb, MSFT_BASIC_DATA_PART);
-
-	fdisk_partition_set_type(ntfs_part, type);
-
-	error = fdisk_add_partition(cxt, ntfs_part, NULL);
-
-	fdisk_get_partition(cxt, 0, &ntfs_part);
-	const char * windrvuuid = fdisk_partition_get_uuid (ntfs_part);
-	printf("WinDrive UUID: %s\n", windrvuuid);
-
-	unsigned char windrv_uuid_bytes[16] = {0};
-
-	uuid_swizzle(windrvuuid, windrv_uuid_bytes);
-	for (int i = 0;i<16;i++) {
-		printf("%02x ", windrv_uuid_bytes[i]);
-	}
-	printf("\n");
-
-	fdisk_write_disklabel(cxt);
-
-	createBootBCD(disk_uuid_bytes, esp_uuid_bytes, windrv_uuid_bytes);
-	return error;
-}
-
 static int prepare_fst_drive(const usb_drive* drive) {
 
 	const char* device = drive->devnode;
@@ -311,8 +222,7 @@ static int prepare_fst_drive(const usb_drive* drive) {
 
 	create_gpt_label(cxt);
 	create_fst_partition(cxt);
-	//create_windows_to_go_partitions(cxt);
-	//create_dual_fst_partitions(cxt);
+
 
 	struct fdisk_table* tb = fdisk_new_table();
 	error = fdisk_get_partitions(cxt, &tb);
@@ -391,7 +301,7 @@ static int prepare_dual_fst_drive(const usb_drive* drive) {
 	// This must come before format call, otherwise fdisk conflicts with mkfs
 	fdisk_deassign_device(cxt, 0);
 
-	// TODO: This strings may become invalid if we free structs above, make them robust
+	// TODO: These strings may become invalid if we free structs above, make them robust
 	format_ntfs(ntfs_part_node);
 	format_vfat(vfat_part_node);
 
@@ -399,7 +309,7 @@ static int prepare_dual_fst_drive(const usb_drive* drive) {
 	return error;
 }
 
-static int prepare_windows_to_go_drive(const usb_drive* drive) {
+static int prepare_windows_to_go_drive(const usb_drive* drive, unsigned char uuidarray[3][16]) {
 
 	const char* device = drive->devnode;
 	int error = 0;
@@ -432,7 +342,7 @@ static int prepare_windows_to_go_drive(const usb_drive* drive) {
 	fdisk_delete_all_partitions(cxt);
 
 	create_gpt_label(cxt);
-	create_windows_to_go_partitions(cxt);
+	create_windows_to_go_partitions(cxt, uuidarray);
 
 	struct fdisk_table* tb = fdisk_new_table();
 	error = fdisk_get_partitions(cxt, &tb);
@@ -580,30 +490,54 @@ static int unmount_ALL() {
 	return 0;
 }
 
-int lock_drive(const usb_drive* drive) {
-	mnt_new_context();
-	// pid_t pid2;
-	// char *argv2[] = {"umount", part_node, (char*)0};
-	//
-	// char * const environ2[] = {NULL};
-	// int status2 = posix_spawn(&pid2, "/usr/bin/umount", NULL, NULL, argv2, environ2);
-	// if(status2 != 0) {
-	// 	fprintf(stderr, strerror(status2));
-	// 	return 1;
-	// }
-	//
-	// wait(NULL);
+static int lock_drive(const usb_drive* drive) {
+	struct fdisk_context* cxt = fdisk_new_context();
+	fdisk_assign_device(cxt, drive->devnode, 1);
 
+	struct fdisk_table* tb = fdisk_new_table();
+	fdisk_get_partitions(cxt, &tb);
+
+	int nums = fdisk_table_get_nents(tb);
+	for(int i = 0;i<nums;i++) {
+		struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, i);
+		char* part_node = NULL;
+		fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+		struct libmnt_context *mntcxt = mnt_new_context();
+
+		mnt_context_set_target(mntcxt, part_node);
+
+		printf("Device: %s\n", part_node);
+
+		int error = mnt_context_umount(mntcxt);
+		if(error) {
+			printf("Error while unmounting partitions. Aborting!\n");
+			fdisk_deassign_device(cxt, 1);
+			return error;
+		}
+
+		// This needs investigation
+		// int statuserr = mnt_context_get_status(mntcxt);
+		// printf("Status: %d\n", statuserr);
+
+		mnt_free_context(mntcxt);
+	}
+
+	fdisk_deassign_device(cxt, 1);
 	return 0;
 }
+
 int make_bootable(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
 
 	printf("Formatting USB drive\n");
-	// TODO: Unmount logic here
 
-	lock_drive(drive);
-	prepare_windows_to_go_drive(drive);
+	int error = lock_drive(drive);
+	if(error) {
+		printf("Error: %d\n", error);
+		return 0;
+	}
+
+	prepare_fst_drive(drive);
 
 	if (!is_valid_ISO(isopath)) {
 		return -1;
@@ -611,16 +545,16 @@ int make_bootable(const usb_drive* drive, const char* isopath) {
 	}
 
 	printf("Mounting ISO\n");
-	//mount_ISO(isopath);
+	mount_ISO(isopath);
 
 	printf("Mounting Device\n");
-	//mount_device(drive);
+	mount_device(drive);
 
 	printf("Copying ISO files\n");
-	//copy_ISO_files();
+	copy_ISO_files();
 
 	printf("Unmounting All");
-	//unmount_ALL();
+	unmount_ALL();
 
 	printf("Done\n");
 
@@ -632,7 +566,15 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
 
 	printf("Formatting USB drive\n");
-	prepare_fst_drive(drive);
+
+	int error = lock_drive(drive);
+	if(error) {
+		printf("Error: %d\n", error);
+		return 0;
+	}
+	unsigned char uuidarray[3][16] = {0};
+	prepare_windows_to_go_drive(drive, uuidarray);
+	createBootBCD(uuidarray[0], uuidarray[1], uuidarray[2]);
 
 	if (!is_valid_ISO(isopath)) {
 		return -1;
