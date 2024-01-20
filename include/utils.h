@@ -7,6 +7,12 @@
 
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+
+#define ISO_MNT_PATH "/mnt/sufurISO"
+#define USB_MNT_PATH "/mnt/sufurUSB"
 
 static const char* get_filename_ext(const char* filename) {
     const char* dot = strrchr(filename, '.');
@@ -88,6 +94,19 @@ static void uuid_swizzle(const char* uuid, char destarr[]) {
         mover[1] = uuid[i+1];
         destarr[j] = (unsigned) strtol(mover, NULL, 16);
     }
+}
+
+// This is a laughably naive jugaad, but it works for now
+// TODO: Fix this
+static int isWindowsISO() {
+    const int error = faccessat(-1, ISO_MNT_PATH"/sources/install.wim", F_OK, AT_EACCESS);
+
+    if (error) {
+        printf("Not Windows ISO\n");
+        return 0;
+    }
+
+    return 1;
 }
 
 #endif //UTILS_H

@@ -526,18 +526,38 @@ static int lock_drive(const usb_drive* drive) {
 	return 0;
 }
 
-int make_bootable(const usb_drive* drive, const char* isopath) {
+int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
 
+
 	printf("Formatting USB drive\n");
+	 int error = lock_drive(drive);
+	 if(error) {
+	 	printf("Error: %d\n", error);
+	 	return error;
+	 }
 
-	int error = lock_drive(drive);
-	if(error) {
-		printf("Error: %d\n", error);
-		return 0;
-	}
+	 prepare_dual_fst_drive(drive);
 
-	prepare_fst_drive(drive);
+
+
+	 printf("Mounting Device\n");
+	 mount_device(drive);
+
+	 printf("Copying ISO files\n");
+	 copy_ISO_files();
+
+	 printf("Unmounting All");
+	 unmount_ALL();
+
+	 printf("Done\n");
+
+	return 0;
+
+}
+
+int make_bootable(const usb_drive* drive, const char* isopath) {
+	setbuf(stdout, NULL);
 
 	if (!is_valid_ISO(isopath)) {
 		return -1;
@@ -547,16 +567,36 @@ int make_bootable(const usb_drive* drive, const char* isopath) {
 	printf("Mounting ISO\n");
 	mount_ISO(isopath);
 
-	printf("Mounting Device\n");
-	mount_device(drive);
+	printf("Checking if it is Windows ISO\n");
 
-	printf("Copying ISO files\n");
-	copy_ISO_files();
+	const int isWin = isWindowsISO();
 
-	printf("Unmounting All");
-	unmount_ALL();
+	printf("Is windows ISO: %d\n", isWin );
 
-	printf("Done\n");
+	if (isWin) {
+		return make_windows_bootable(drive, isopath);
+	}
+	//printf("Formatting USB drive\n");
+	// int error = lock_drive(drive);
+	// if(error) {
+	// 	printf("Error: %d\n", error);
+	// 	return error;
+	// }
+	//
+	// prepare_fst_drive(drive);
+	//
+	//
+	//
+	// printf("Mounting Device\n");
+	// mount_device(drive);
+	//
+	// printf("Copying ISO files\n");
+	// copy_ISO_files();
+	//
+	// printf("Unmounting All");
+	// unmount_ALL();
+	//
+	// printf("Done\n");
 
 	return 0;
 
