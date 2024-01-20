@@ -1,0 +1,3 @@
+[submodule "uefi-ntfs-img"]
+	path = uefi-ntfs-img
+	url = https://github.com/AnuthaDev/uefi-ntfs-img

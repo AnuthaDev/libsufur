@@ -436,8 +436,7 @@ static int mount_device(const usb_drive* drive) {
 	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
 	printf("\nMounting Partion: %s\n", part_node);
 
-
-
+	// TODO: Missing a call to fdisk_deassign_device
 
 
 	mkdir(USB_MNT_PATH, 0700);
@@ -459,6 +458,7 @@ static int mount_device(const usb_drive* drive) {
 
 static int copy_ISO_files() {
 	pid_t pid;
+	// TODO: why should it be "/." and not "/" or "/*". I forgot ¯\_(ツ)_/¯
 	char *argv[] = {"cp", "-r", ISO_MNT_PATH "/.", USB_MNT_PATH, (char*)0};
 
 	char * const environ[] = {NULL};
@@ -473,6 +473,64 @@ static int copy_ISO_files() {
 	return 0;
 }
 
+static int flash_uefi_ntfs_img(const usb_drive *drive) {
+	const char* device = drive->devnode;
+	int error = 0;
+	struct fdisk_context* cxt = fdisk_new_context();
+
+	if (!cxt)
+		return error = -1;
+
+	error = faccessat(-1, device, F_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Device does not exist\n");
+		return error;
+	}
+
+	error = faccessat(-1, device, R_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Please run the program as root\n");
+		return error;
+	}
+
+	error = fdisk_assign_device(cxt, device, 1);
+
+	if (error) {
+		printf("Failed to assign fdisk device\n");
+		return error;
+	}
+
+	struct fdisk_table* tb = fdisk_new_table();
+	error = fdisk_get_partitions(cxt, &tb);
+
+	if (error) {
+		printf("Failed to get device partition data\n");
+		return error;
+	}
+
+	const int vfat_part_no = 1;
+	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, vfat_part_no);
+	char* part_node = NULL;
+	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+	printf("\nFlashing Partion: %s\n", part_node);
+
+
+	pid_t pid;
+	char *argv[] = {"cp", "uefi-ntfs.img", part_node , (char*)0};
+
+	char * const environ[] = {NULL};
+	int status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv, environ);
+	if(status != 0) {
+		fprintf(stderr, strerror(status));
+		return 1;
+	}
+
+	wait(NULL);
+
+	return 0;
+}
 static int unmount_ALL() {
 
 	pid_t pid;
@@ -530,27 +588,28 @@ int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
 
 
+	printf("Unmounting Drive partitions\n");
+	int error = lock_drive(drive);
+	if (error) {
+		printf("Error: %d\n", error);
+		return error;
+	}
+
 	printf("Formatting USB drive\n");
-	 int error = lock_drive(drive);
-	 if(error) {
-	 	printf("Error: %d\n", error);
-	 	return error;
-	 }
+	prepare_dual_fst_drive(drive);
 
-	 prepare_dual_fst_drive(drive);
+	printf("Mounting Device\n");
+	mount_device(drive);
 
+	printf("Copying ISO files\n");
+	copy_ISO_files();
 
+	printf("Unmounting All");
+	unmount_ALL();
 
-	 printf("Mounting Device\n");
-	 mount_device(drive);
-
-	 printf("Copying ISO files\n");
-	 copy_ISO_files();
-
-	 printf("Unmounting All");
-	 unmount_ALL();
-
-	 printf("Done\n");
+	printf("Flashing UEFI:NTFS");
+	flash_uefi_ntfs_img(drive);
+	printf("Done\n");
 
 	return 0;
 
@@ -564,39 +623,42 @@ int make_bootable(const usb_drive* drive, const char* isopath) {
 		printf("Invalid ISO file\n");
 	}
 
-	printf("Mounting ISO\n");
-	mount_ISO(isopath);
+	 printf("Mounting ISO\n");
+	 mount_ISO(isopath);
 
-	printf("Checking if it is Windows ISO\n");
+	 printf("Checking if it is Windows ISO\n");
 
-	const int isWin = isWindowsISO();
+	 const int isWin = isWindowsISO();
 
-	printf("Is windows ISO: %d\n", isWin );
 
 	if (isWin) {
+		printf("Detected Windows ISO! Will use UEFI:NTFS\n");
 		return make_windows_bootable(drive, isopath);
 	}
-	//printf("Formatting USB drive\n");
-	// int error = lock_drive(drive);
-	// if(error) {
-	// 	printf("Error: %d\n", error);
-	// 	return error;
-	// }
-	//
-	// prepare_fst_drive(drive);
-	//
-	//
-	//
-	// printf("Mounting Device\n");
-	// mount_device(drive);
-	//
-	// printf("Copying ISO files\n");
-	// copy_ISO_files();
-	//
-	// printf("Unmounting All");
-	// unmount_ALL();
-	//
-	// printf("Done\n");
+
+	printf("Did not detect Windows ISO!\n");
+	printf("Proceeding with simple File System Transposition\n");
+
+	printf("Formatting USB drive\n");
+	int error = lock_drive(drive);
+	if (error) {
+		printf("Error: %d\n", error);
+		return error;
+	}
+
+	prepare_fst_drive(drive);
+
+
+	printf("Mounting Device\n");
+	mount_device(drive);
+
+	printf("Copying ISO files\n");
+	copy_ISO_files();
+
+	printf("Unmounting All");
+	unmount_ALL();
+
+	printf("Done\n");
 
 	return 0;
 
