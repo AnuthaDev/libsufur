@@ -686,7 +686,6 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	}
 	unsigned char uuidarray[3][16] = {0};
 	prepare_windows_to_go_drive(drive, uuidarray);
-	createBootBCD(uuidarray[0], uuidarray[1], uuidarray[2]);
 
 	wimapply_w2go(drive);
 
@@ -793,7 +792,7 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	wait(NULL);
 
 
-	char *argv5[] = {"cp", "BCD", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/", (char*)0};
+	char *argv5[] = {"cp", WTG_NTFS_MNT_PATH "/Windows/System32/config/BCD-Template", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/BCD", (char*)0};
 
 	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv5, environ);
 	if(status != 0) {
@@ -802,6 +801,9 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	}
 
 	wait(NULL);
+
+	createBootBCD(WTG_ESP_MNT_PATH"/EFI/Microsoft/Boot/BCD", uuidarray[0], uuidarray[1], uuidarray[2]);
+
 	// mount partition index 1
 	// mount partition index 0, copy esp files + bcd from partidx1 to partidx0
 	// apply SanPolicy to partidx1

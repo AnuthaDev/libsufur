@@ -7,7 +7,7 @@
 
 
 
-int createBootBCD(char disk_bits[16], char esp_part_bits[16], char boot_part_bits[16]);
+int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], char boot_part_bits[16]);
 
 int createRecBCD(char disk_bits[16], char esp_part_bits[16]);
 
