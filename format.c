@@ -27,7 +27,7 @@ int format_vfat(const char* part_node) {
 
 int format_ntfs(const char* part_node) {
     pid_t pid;
-    const char *argv[] = {"mkfs.ntfs", part_node, (char*)0};
+    const char *argv[] = {"mkfs.ntfs", "-Q", part_node, (char*)0};
 
     char * const environ[] = {NULL};
     const int status = posix_spawn(&pid, "/usr/sbin/mkfs.ntfs", NULL, NULL, argv, environ);

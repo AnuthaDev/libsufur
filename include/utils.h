@@ -9,7 +9,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <spawn.h>
+#include <stdlib.h>
 #include <libfdisk/libfdisk.h>
+#include <sys/wait.h>
 
 
 #define ISO_MNT_PATH "/mnt/sufurISO"
