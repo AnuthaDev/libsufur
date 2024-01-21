@@ -14,7 +14,7 @@ int main()
 	}
 
 	//format_usb_drive(val);
-	make_bootable(val, "/media/extradrive/Win10_22H2_English_x64v1.iso" );
+	make_bootable(val, "/media/extradrive/Win10_22H2_English_x64v1.iso", 1 );
 
 	//make_bootable(val, "/home/thakur/Downloads/debian-12.4.0-amd64-netinst.iso" );
 

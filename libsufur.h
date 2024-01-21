@@ -17,8 +17,6 @@ typedef struct usb_drive {
 int enumerate_usb_mass_storage(usb_drive**);
 
 
-int make_bootable(const usb_drive*, const char*);
-
-int make_windows_to_go(const usb_drive* drive, const char* isopath);
+int make_bootable(const usb_drive*, const char*, int isWin2GO);
 
 #endif //LIBSUFUR_H

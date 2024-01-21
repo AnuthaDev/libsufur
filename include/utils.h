@@ -9,10 +9,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <libfdisk/libfdisk.h>
 
 
 #define ISO_MNT_PATH "/mnt/sufurISO"
 #define USB_MNT_PATH "/mnt/sufurUSB"
+
+#define WTG_NTFS_MNT_PATH "/mnt/sufurNTFS"
+#define WTG_ESP_MNT_PATH "/mnt/sufurESP"
 
 static const char* get_filename_ext(const char* filename) {
     const char* dot = strrchr(filename, '.');
@@ -108,5 +112,30 @@ static int isWindowsISO() {
 
     return 1;
 }
+
+
+static int mount_partition(const char* partition, const char* target) {
+    int error = 0;
+
+    // TODO: Missing a call to fdisk_deassign_device
+
+
+    mkdir(target, 0700);
+
+    pid_t pid;
+    const char *argv[] = {"mount", partition, target, (char*)0};
+
+    char * const environ[] = {NULL};
+    int status = posix_spawn(&pid, "/usr/bin/mount", NULL, NULL, argv, environ);
+    if(status != 0) {
+        fprintf(stderr, strerror(status));
+        return 1;
+    }
+
+    wait(NULL);
+
+    return 0;
+}
+
 
 #endif //UTILS_H

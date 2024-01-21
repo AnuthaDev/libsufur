@@ -615,12 +615,217 @@ int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 
 }
 
-int make_bootable(const usb_drive* drive, const char* isopath) {
+int wimapply_w2go(const usb_drive* drive) {
+	const char* device = drive->devnode;
+	int error = 0;
+	struct fdisk_context* cxt = fdisk_new_context();
+
+	if (!cxt)
+		return error = -1;
+
+	error = faccessat(-1, device, F_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Device does not exist\n");
+		return error;
+	}
+
+	error = faccessat(-1, device, R_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Please run the program as root\n");
+		return error;
+	}
+
+	error = fdisk_assign_device(cxt, device, 1);
+
+	if (error) {
+		printf("Failed to assign fdisk device\n");
+		return error;
+	}
+
+	struct fdisk_table* tb = fdisk_new_table();
+	error = fdisk_get_partitions(cxt, &tb);
+
+	if (error) {
+		printf("Failed to get device partition data\n");
+		return error;
+	}
+
+	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, 1);
+	char* part_node = NULL;
+	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+	printf("Applying WIM to Partition: %s\n", part_node);
+
+
+//wimapply WIMFILE [IMAGE] TARGET [OPTION...]
+	pid_t pid;
+	char *argv[] = {"wimapply", ISO_MNT_PATH"/sources/install.wim", "1", part_node, (char*)0};
+
+	char * const environ[] = {NULL};
+	int status = posix_spawn(&pid, "/usr/bin/wimapply", NULL, NULL, argv, environ);
+	if(status != 0) {
+		fprintf(stderr, strerror(status));
+		return 1;
+	}
+
+	wait(NULL);
+
+	return 0;
+}
+
+int make_windows_to_go(const usb_drive* drive, const char* isopath) {
+	setbuf(stdout, NULL);
+
+	printf("Formatting USB drive\n");
+
+	int error = lock_drive(drive);
+	if(error) {
+		printf("Error: %d\n", error);
+		return error;
+	}
+	unsigned char uuidarray[3][16] = {0};
+	prepare_windows_to_go_drive(drive, uuidarray);
+	createBootBCD(uuidarray[0], uuidarray[1], uuidarray[2]);
+
+	wimapply_w2go(drive);
+
+
+	const char* device = drive->devnode;
+	struct fdisk_context* cxt = fdisk_new_context();
+
+	if (!cxt)
+		return error = -1;
+
+	error = faccessat(-1, device, F_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Device does not exist\n");
+		return error;
+	}
+
+	error = faccessat(-1, device, R_OK, AT_EACCESS);
+
+	if (error) {
+		printf("Please run the program as root\n");
+		return error;
+	}
+
+	error = fdisk_assign_device(cxt, device, 1);
+
+	if (error) {
+		printf("Failed to assign fdisk device\n");
+		return error;
+	}
+
+	struct fdisk_table* tb = fdisk_new_table();
+	error = fdisk_get_partitions(cxt, &tb);
+
+	if (error) {
+		printf("Failed to get device partition data\n");
+		return error;
+	}
+
+	struct fdisk_partition* ntfs_pt = fdisk_table_get_partition_by_partno(tb, 1);
+	char* ntfs_part_node = NULL;
+	error = fdisk_partition_to_string(ntfs_pt, cxt, FDISK_FIELD_DEVICE, &ntfs_part_node);
+	printf("\nMounting Partion: %s\n", ntfs_part_node);
+	mount_partition(ntfs_part_node, WTG_NTFS_MNT_PATH);
+
+
+	struct fdisk_partition* esp_pt = fdisk_table_get_partition_by_partno(tb, 0);
+	char* esp_part_node = NULL;
+	error = fdisk_partition_to_string(esp_pt, cxt, FDISK_FIELD_DEVICE, &esp_part_node);
+	printf("\nMounting Partion: %s\n",esp_part_node);
+	mount_partition(esp_part_node, WTG_ESP_MNT_PATH);
+	// TODO: Missing a call to fdisk_deassign_device
+	fdisk_deassign_device(cxt, 1);
+
+
+	mkdir(WTG_ESP_MNT_PATH "/EFI", 0700);
+	mkdir(WTG_ESP_MNT_PATH "/EFI/Boot", 0700);
+	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft", 0700);
+	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot", 0700);
+	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Recovery", 0700);
+
+	pid_t pid;
+	char * const environ[] = {NULL};
+
+	char *argv[] = {"cp", "-r", WTG_NTFS_MNT_PATH "/Windows/Boot/EFI/.", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/", (char*)0};
+
+	int status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv, environ);
+	if(status != 0) {
+		fprintf(stderr, strerror(status));
+		return 1;
+	}
+
+	wait(NULL);
+
+
+	char *argv2[] = {"cp", "-r", WTG_NTFS_MNT_PATH "/Windows/Boot/Resources", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/", (char*)0};
+
+	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv2, environ);
+	if(status != 0) {
+		fprintf(stderr, strerror(status));
+		return 1;
+	}
+
+	wait(NULL);
+
+	char *argv3[] = {"cp", "-r", WTG_NTFS_MNT_PATH "/Windows/Boot/Fonts", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/", (char*)0};
+
+	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv3, environ);
+	if(status != 0) {
+		fprintf(stderr, strerror(status));
+		return 1;
+	}
+
+	wait(NULL);
+
+	char *argv4[] = {"cp", WTG_NTFS_MNT_PATH "/Windows/Boot/EFI/bootmgfw.efi", WTG_ESP_MNT_PATH "/EFI/Boot/bootx64.efi", (char*)0};
+
+	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv4, environ);
+	if(status != 0) {
+		fprintf(stderr, strerror(status));
+		return 1;
+	}
+
+	wait(NULL);
+
+
+	char *argv5[] = {"cp", "BCD", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/", (char*)0};
+
+	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv5, environ);
+	if(status != 0) {
+		fprintf(stderr, strerror(status));
+		return 1;
+	}
+
+	wait(NULL);
+	// mount partition index 1
+	// mount partition index 0, copy esp files + bcd from partidx1 to partidx0
+	// apply SanPolicy to partidx1
+	// copy sysprep unattend.xml
+	// unmount all
+	//printf("Mounting Device\n");
+	//mount_device(drive);
+
+
+	printf("Unmounting All");
+	unmount_ALL();
+
+	printf("Done\n");
+
+	return 0;
+
+}
+
+int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	setbuf(stdout, NULL);
 
 	if (!is_valid_ISO(isopath)) {
-		return -1;
 		printf("Invalid ISO file\n");
+		return -1;
 	}
 
 	 printf("Mounting ISO\n");
@@ -631,7 +836,10 @@ int make_bootable(const usb_drive* drive, const char* isopath) {
 	 const int isWin = isWindowsISO();
 
 
-	if (isWin) {
+	if (isWin && isWin2GO) {
+		printf("Making Windows to Go drive\n");
+		return make_windows_to_go(drive, isopath);
+	}else if(isWin) {
 		printf("Detected Windows ISO! Will use UEFI:NTFS\n");
 		return make_windows_bootable(drive, isopath);
 	}
@@ -657,43 +865,6 @@ int make_bootable(const usb_drive* drive, const char* isopath) {
 
 	printf("Unmounting All");
 	unmount_ALL();
-
-	printf("Done\n");
-
-	return 0;
-
-}
-
-int make_windows_to_go(const usb_drive* drive, const char* isopath) {
-	setbuf(stdout, NULL);
-
-	printf("Formatting USB drive\n");
-
-	int error = lock_drive(drive);
-	if(error) {
-		printf("Error: %d\n", error);
-		return 0;
-	}
-	unsigned char uuidarray[3][16] = {0};
-	prepare_windows_to_go_drive(drive, uuidarray);
-	createBootBCD(uuidarray[0], uuidarray[1], uuidarray[2]);
-
-	if (!is_valid_ISO(isopath)) {
-		return -1;
-		printf("Invalid ISO file\n");
-	}
-
-	printf("Mounting ISO\n");
-	//mount_ISO(isopath);
-
-	printf("Mounting Device\n");
-	//mount_device(drive);
-
-	printf("Copying ISO files\n");
-	//copy_ISO_files();
-
-	printf("Unmounting All");
-	//unmount_ALL();
 
 	printf("Done\n");
 
