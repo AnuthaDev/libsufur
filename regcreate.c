@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <hivex.h>
+#include <unistd.h>
+#include <bits/fcntl-linux.h>
 
 #include "wtg.h"
 #define EMSSETTINGS "{0ce4991b-e6b3-4b16-b23c-5e0d9250e5d9}"
@@ -98,6 +100,12 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 	setbytearray(esp_bytes, disk_bits, esp_part_bits);
 
 
+	int error = faccessat(-1, path, F_OK, AT_EACCESS);
+
+	if (error) {
+		printf("BCD-Template not found. Failed to create BCD entries. Media will be unbootable\n");
+		return error;
+	}
 
 	hive_h *handle = hivex_open(path, HIVEX_OPEN_WRITE);
 
@@ -135,7 +143,7 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 
 
 	hive_node_h objs = hivex_node_get_child(handle, root, "Objects");
-	
+
 
 
 	char *node0 = EMSSETTINGS;

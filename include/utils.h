@@ -110,7 +110,7 @@ static int isWindowsISO() {
 
     if (error) {
         printf("Not Windows ISO\n");
-        return 0;
+        return error;
     }
 
     return 1;
