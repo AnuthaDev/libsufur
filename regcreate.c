@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <hivex.h>
 #include <unistd.h>
-#include <bits/fcntl-linux.h>
+#include <fcntl.h>
 
 #include "wtg.h"
 #define EMSSETTINGS "{0ce4991b-e6b3-4b16-b23c-5e0d9250e5d9}"

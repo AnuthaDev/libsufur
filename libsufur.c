@@ -457,19 +457,19 @@ static int mount_device(const usb_drive* drive) {
 }
 
 static int copy_ISO_files() {
-	pid_t pid;
-	// TODO: why should it be "/." and not "/" or "/*". I forgot ¯\_(ツ)_/¯
-	char *argv[] = {"cp", "-r", ISO_MNT_PATH "/.", USB_MNT_PATH, (char*)0};
-
-	char * const environ[] = {NULL};
-	int status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
-	}
-
-	wait(NULL);
-
+	// pid_t pid;
+	// // TODO: why should it be "/." and not "/" or "/*". I forgot ¯\_(ツ)_/¯
+	// char *argv[] = {"cp", "-r", ISO_MNT_PATH "/.", USB_MNT_PATH, (char*)0};
+	//
+	// char * const environ[] = {NULL};
+	// int status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv, environ);
+	// if(status != 0) {
+	// 	fprintf(stderr, strerror(status));
+	// 	return 1;
+	// }
+	//
+	// wait(NULL);
+	copy_dir_contents(ISO_MNT_PATH, USB_MNT_PATH);
 	return 0;
 }
 
@@ -838,10 +838,10 @@ int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	 const int isWin = isWindowsISO();
 
 
-	if (isWin && isWin2GO) {
+	if ((isWin == 1) && isWin2GO) {
 		printf("Making Windows to Go drive\n");
 		return make_windows_to_go(drive, isopath);
-	}else if(isWin) {
+	}else if(isWin == 1) {
 		printf("Detected Windows ISO! Will use UEFI:NTFS\n");
 		return make_windows_bootable(drive, isopath);
 	}

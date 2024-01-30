@@ -4,6 +4,7 @@
 
 #ifndef UTILS_H
 #define UTILS_H
+#define __USE_XOPEN_EXTENDED 500
 
 #include <string.h>
 #include <sys/stat.h>
@@ -13,13 +14,11 @@
 #include <stdlib.h>
 #include <libfdisk/libfdisk.h>
 #include <sys/wait.h>
+#include <ftw.h>
+#include <dirent.h>
+#include <stdbool.h>
 
-
-#define ISO_MNT_PATH "/mnt/sufurISO"
-#define USB_MNT_PATH "/mnt/sufurUSB"
-
-#define WTG_NTFS_MNT_PATH "/mnt/sufurNTFS"
-#define WTG_ESP_MNT_PATH "/mnt/sufurESP"
+#include "constants.h"
 
 static const char* get_filename_ext(const char* filename) {
     const char* dot = strrchr(filename, '.');
@@ -140,5 +139,74 @@ static int mount_partition(const char* partition, const char* target) {
     return 0;
 }
 
+static char *copy_to_path;
+static char *copy_from_path;
+static bool copy_busy = false;
 
+static bool copy_file(const char* from, char* to) {
+    FILE *ff = fopen(from, "r");
+
+    if(!ff) {
+        perror("Can't open source file");
+        return false;
+    }
+
+    FILE *ft = fopen(to, "w");
+
+    if(!ft) {
+        perror("Can't open dest file");
+        fclose(ff);
+        return false;
+    }
+
+    char buffer[4 * MIB];
+    size_t r = 0;
+
+    while(r = fread(buffer, 1, sizeof(buffer), ff)){
+        fwrite(buffer, 1, r, ft);
+    }
+
+    fclose(ff);
+    fclose(ft);
+
+    return true;
+}
+static int cp_callback(const char* fpath, const struct stat *sb, int type_flag, struct FTW *ftwbuf) {
+    printf("%s\n", fpath );
+    char to_location[1024];
+    sprintf(to_location, "%s/%s", copy_to_path, fpath + strlen(copy_from_path) + 1);
+
+    if(type_flag & FTW_D) {
+        // is a directory...
+        if(ftwbuf->level == 0) {
+            // level == 0 means we are in the base directory, don't create that...
+            return 0;
+        }
+
+        if(mkdir(to_location, 0775)) {
+            perror("Failed to create directory\n");
+            return -1;
+        }
+    }else if (!copy_file(fpath, to_location)) {
+        return -1;
+    }
+
+    return 0;
+}
+// copy path/* into to/
+static int copy_dir_contents(char *path, char *to) {
+    if(copy_busy) {
+        fprintf(stderr, "copy busy!\n");
+        return false;
+    }
+    copy_busy = true;
+    copy_to_path = to;
+    copy_from_path = path;
+
+    int ret = nftw(path, cp_callback, 64, FTW_PHYS);
+
+    copy_busy = false;
+
+    return ret == 0;
+}
 #endif //UTILS_H
