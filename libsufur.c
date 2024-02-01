@@ -375,22 +375,21 @@ static int prepare_windows_to_go_drive(const usb_drive* drive, unsigned char uui
 }
 
 
-
 static int mount_ISO(const char* isopath) {
 	mkdir(ISO_MNT_PATH, 0700);
 
-	pid_t pid;
-	char *argv[] = {"mount", "-o", "loop", isopath, ISO_MNT_PATH, (char*)0};
+	struct libmnt_context *mntcxt = mnt_new_context();
 
-	char * const environ[] = {NULL};
-	int status = posix_spawn(&pid, "/usr/bin/mount", NULL, NULL, argv, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
+	mnt_context_set_source(mntcxt, isopath);
+	mnt_context_set_target(mntcxt, ISO_MNT_PATH);
+
+	int error = mnt_context_mount(mntcxt);
+	if(error) {
+		printf("Error while mounting ISO. Aborting!\n");
+		return error;
 	}
 
-	wait(NULL);
-
+	mnt_free_context(mntcxt);
 	return 0;
 }
 
@@ -441,34 +440,23 @@ static int mount_device(const usb_drive* drive) {
 
 	mkdir(USB_MNT_PATH, 0700);
 
-	pid_t pid;
-	char *argv[] = {"mount", part_node, USB_MNT_PATH, (char*)0};
 
-	char * const environ[] = {NULL};
-	int status = posix_spawn(&pid, "/usr/bin/mount", NULL, NULL, argv, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
+	struct libmnt_context *mntcxt = mnt_new_context();
+
+	mnt_context_set_source(mntcxt, part_node);
+	mnt_context_set_target(mntcxt, USB_MNT_PATH);
+
+	error = mnt_context_mount(mntcxt);
+	if(error) {
+		printf("Error while mounting USB. Aborting!\n");
+		return error;
 	}
 
-	wait(NULL);
-
+	mnt_free_context(mntcxt);
 	return 0;
 }
 
 static int copy_ISO_files() {
-	// pid_t pid;
-	// // TODO: why should it be "/." and not "/" or "/*". I forgot ¯\_(ツ)_/¯
-	// char *argv[] = {"cp", "-r", ISO_MNT_PATH "/.", USB_MNT_PATH, (char*)0};
-	//
-	// char * const environ[] = {NULL};
-	// int status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv, environ);
-	// if(status != 0) {
-	// 	fprintf(stderr, strerror(status));
-	// 	return 1;
-	// }
-	//
-	// wait(NULL);
 	copy_dir_contents(ISO_MNT_PATH, USB_MNT_PATH);
 	return 0;
 }
@@ -516,34 +504,28 @@ static int flash_uefi_ntfs_img(const usb_drive *drive) {
 	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
 	printf("\nFlashing Partion: %s\n", part_node);
 
-
-	pid_t pid;
-	char *argv[] = {"cp", "uefi-ntfs.img", part_node , (char*)0};
-
-	char * const environ[] = {NULL};
-	int status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
-	}
-
-	wait(NULL);
+	copy_file("uefi-ntfs.img", part_node);
 
 	return 0;
 }
 static int unmount_ALL() {
 
-	pid_t pid;
-	char *argv[] = {"umount", ISO_MNT_PATH, USB_MNT_PATH, (char*)0};
+	struct libmnt_context *mntcxt = mnt_new_context();
 
-	char * const environ[] = {NULL};
-	int status = posix_spawn(&pid, "/usr/bin/umount", NULL, NULL, argv, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
+	mnt_context_set_target(mntcxt, ISO_MNT_PATH);
+	int error = mnt_context_umount(mntcxt);
+	if(error) {
+		printf("Error while unmounting ISO. Continuing\n");
 	}
+	mnt_reset_context(mntcxt);
 
-	wait(NULL);
+
+	mnt_context_set_target(mntcxt, USB_MNT_PATH);
+	error = mnt_context_umount(mntcxt);
+	if(error) {
+		printf("Error while unmounting USB. Continuing\n");
+	}
+	mnt_free_context(mntcxt);
 
 	return 0;
 }
@@ -743,64 +725,20 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 
 	mkdir(WTG_ESP_MNT_PATH "/EFI", 0700);
 	mkdir(WTG_ESP_MNT_PATH "/EFI/Boot", 0700);
+
 	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft", 0700);
 	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot", 0700);
+	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/Resources", 0700);
+	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/Fonts", 0700);
 	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Recovery", 0700);
 
-	pid_t pid;
-	char * const environ[] = {NULL};
+	// WARNING: Don't leave a trailing slash at end of path, it will cause wrong filename
+	copy_dir_contents(WTG_NTFS_MNT_PATH "/Windows/Boot/EFI", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot");
+	copy_dir_contents(WTG_NTFS_MNT_PATH "/Windows/Boot/Resources", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/Resources");
+	copy_dir_contents(WTG_NTFS_MNT_PATH "/Windows/Boot/Fonts", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/Fonts");
 
-	char *argv[] = {"cp", "-r", WTG_NTFS_MNT_PATH "/Windows/Boot/EFI/.", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/", (char*)0};
-
-	int status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
-	}
-
-	wait(NULL);
-
-
-	char *argv2[] = {"cp", "-r", WTG_NTFS_MNT_PATH "/Windows/Boot/Resources", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/", (char*)0};
-
-	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv2, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
-	}
-
-	wait(NULL);
-
-	char *argv3[] = {"cp", "-r", WTG_NTFS_MNT_PATH "/Windows/Boot/Fonts", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/", (char*)0};
-
-	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv3, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
-	}
-
-	wait(NULL);
-
-	char *argv4[] = {"cp", WTG_NTFS_MNT_PATH "/Windows/Boot/EFI/bootmgfw.efi", WTG_ESP_MNT_PATH "/EFI/Boot/bootx64.efi", (char*)0};
-
-	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv4, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
-	}
-
-	wait(NULL);
-
-
-	char *argv5[] = {"cp", WTG_NTFS_MNT_PATH "/Windows/System32/config/BCD-Template", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/BCD", (char*)0};
-
-	status = posix_spawn(&pid, "/usr/bin/cp", NULL, NULL, argv5, environ);
-	if(status != 0) {
-		fprintf(stderr, strerror(status));
-		return 1;
-	}
-
-	wait(NULL);
+	copy_file(WTG_NTFS_MNT_PATH "/Windows/Boot/EFI/bootmgfw.efi", WTG_ESP_MNT_PATH "/EFI/Boot/bootx64.efi");
+	copy_file(WTG_NTFS_MNT_PATH "/Windows/System32/config/BCD-Template", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/BCD");
 
 	createBootBCD(WTG_ESP_MNT_PATH"/EFI/Microsoft/Boot/BCD", uuidarray[0], uuidarray[1], uuidarray[2]);
 
@@ -813,7 +751,7 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	//mount_device(drive);
 
 
-	printf("Unmounting All");
+	printf("Unmounting All\n");
 	unmount_ALL();
 
 	printf("Done\n");
@@ -831,6 +769,7 @@ int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	}
 
 	 printf("Mounting ISO\n");
+	// TODO: Handle error in mount
 	 mount_ISO(isopath);
 
 	 printf("Checking if it is Windows ISO\n");
@@ -838,10 +777,10 @@ int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	 const int isWin = isWindowsISO();
 
 
-	if ((isWin == 1) && isWin2GO) {
+	if ((isWin) && isWin2GO) {
 		printf("Making Windows to Go drive\n");
 		return make_windows_to_go(drive, isopath);
-	}else if(isWin == 1) {
+	}else if(isWin) {
 		printf("Detected Windows ISO! Will use UEFI:NTFS\n");
 		return make_windows_bootable(drive, isopath);
 	}

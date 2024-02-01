@@ -10,10 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <spawn.h>
 #include <stdlib.h>
-#include <libfdisk/libfdisk.h>
-#include <sys/wait.h>
 #include <ftw.h>
 #include <dirent.h>
 #include <stdbool.h>
@@ -109,7 +106,7 @@ static int isWindowsISO() {
 
     if (error) {
         printf("Not Windows ISO\n");
-        return error;
+        return 0;
     }
 
     return 1;
@@ -120,21 +117,23 @@ static int mount_partition(const char* partition, const char* target) {
     int error = 0;
 
     // TODO: Missing a call to fdisk_deassign_device
+    // EDIT: Maybe not
 
 
     mkdir(target, 0700);
 
-    pid_t pid;
-    const char *argv[] = {"mount", partition, target, (char*)0};
+    struct libmnt_context *mntcxt = mnt_new_context();
 
-    char * const environ[] = {NULL};
-    int status = posix_spawn(&pid, "/usr/bin/mount", NULL, NULL, argv, environ);
-    if(status != 0) {
-        fprintf(stderr, strerror(status));
-        return 1;
+    mnt_context_set_source(mntcxt, partition);
+    mnt_context_set_target(mntcxt, target);
+
+    error = mnt_context_mount(mntcxt);
+    if(error) {
+        printf("Error while mounting partition %s. Aborting!\n", partition);
+        return error;
     }
 
-    wait(NULL);
+    mnt_free_context(mntcxt);
 
     return 0;
 }
@@ -143,7 +142,7 @@ static char *copy_to_path;
 static char *copy_from_path;
 static bool copy_busy = false;
 
-static bool copy_file(const char* from, char* to) {
+static bool copy_file(const char* from, const char* to) {
     FILE *ff = fopen(from, "r");
 
     if(!ff) {
@@ -159,10 +158,10 @@ static bool copy_file(const char* from, char* to) {
         return false;
     }
 
-    char buffer[4 * MIB];
+    char buffer[4 * MIB] = {0};
     size_t r = 0;
 
-    while(r = fread(buffer, 1, sizeof(buffer), ff)){
+    while((r = fread(buffer, 1, sizeof(buffer), ff))){
         fwrite(buffer, 1, r, ft);
     }
 
@@ -172,8 +171,7 @@ static bool copy_file(const char* from, char* to) {
     return true;
 }
 static int cp_callback(const char* fpath, const struct stat *sb, int type_flag, struct FTW *ftwbuf) {
-    printf("%s\n", fpath );
-    char to_location[1024];
+    char to_location[1 * KIB];
     sprintf(to_location, "%s/%s", copy_to_path, fpath + strlen(copy_from_path) + 1);
 
     if(type_flag & FTW_D) {
@@ -187,13 +185,18 @@ static int cp_callback(const char* fpath, const struct stat *sb, int type_flag, 
             perror("Failed to create directory\n");
             return -1;
         }
-    }else if (!copy_file(fpath, to_location)) {
+    }else if (type_flag & FTW_SL) {
+        printf("TODO: Handle Symlinks\n");
+    }
+    else if (!copy_file(fpath, to_location)) {
         return -1;
     }
 
     return 0;
 }
 // copy path/* into to/
+// TODO: Fix this error, this is very dangerous
+// WARNING: `path` and `to` must not have trailing slash
 static int copy_dir_contents(char *path, char *to) {
     if(copy_busy) {
         fprintf(stderr, "copy busy!\n");
