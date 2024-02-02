@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include "mkntfs.h"
 
 int format_vfat(const char* part_node) {
 
@@ -26,17 +27,9 @@ int format_vfat(const char* part_node) {
 }
 
 int format_ntfs(const char* part_node) {
-    pid_t pid;
     const char *argv[] = {"mkfs.ntfs", "-Q", part_node, (char*)0};
-
-    char * const environ[] = {NULL};
-    const int status = posix_spawn(&pid, "/usr/sbin/mkfs.ntfs", NULL, NULL, argv, environ);
-    if(status != 0) {
-        fprintf(stderr, strerror(status));
-        return 1;
-    }
-
-    wait(NULL);
+    const int argc = 3;
+    mkntfs(argc, argv);
 
     return 0;
 }
