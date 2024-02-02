@@ -5184,7 +5184,7 @@ done:
  * Return:  0  Success, the program worked
  *	    1  Error, something went wrong
  */
-int main(int argc, char *argv[])
+int mkntfs(int argc, char *argv[])
 {
 	int result = 1;
 

@@ -48,54 +48,52 @@ static char* faaltu[7] = {
 // https://devblogs.microsoft.com/oldnewthing/20091008-00/?p=16443
 
 
-static void insertval(hive_h *handle, hive_node_h node_elem_h, char *nodename, hive_type type, int size, char data[])
-{
+static void insertval(hive_h* handle, hive_node_h node_elem_h, const char* nodename, hive_type type, int size,
+                      char data[]) {
 	hive_node_h node_elem_val_h = 0;
 	node_elem_val_h = hivex_node_get_child(handle, node_elem_h, nodename);
 
-	if(node_elem_val_h == 0) {
+	if (node_elem_val_h == 0) {
 		node_elem_val_h = hivex_node_add_child(handle, node_elem_h, nodename);
 	}
 
-	hive_set_value node_elem_val_elem = {
-			.key = "Element",
-			.t = type,
-			.len = size,
-			.value = data};
+	const hive_set_value node_elem_val_elem = {
+		.key = "Element",
+		.t = type,
+		.len = size,
+		.value = data
+	};
 	hivex_node_set_value(handle, node_elem_val_h, &node_elem_val_elem, 0);
 }
 
-static void setdesc(hive_h *handle, hive_node_h node_h, char bytes[])
-{
-	hive_node_h node_desc_h = hivex_node_add_child(handle, node_h, "Description");
-	hive_set_value node_desc_type = {
-			.key = "Type",
-			.t = hive_t_REG_DWORD,
-			.len = 4,
-			.value = bytes,
+static void setdesc(hive_h* handle, hive_node_h node_h, char bytes[]) {
+	const hive_node_h node_desc_h = hivex_node_add_child(handle, node_h, "Description");
+	const hive_set_value node_desc_type = {
+		.key = "Type",
+		.t = hive_t_REG_DWORD,
+		.len = 4,
+		.value = bytes,
 	};
 	hivex_node_set_value(handle, node_desc_h, &node_desc_type, 0);
 }
 
-static void get_utf16le(char *src, char dest[], int size)
-{
-	for (int i = 0, j = 0; i < size && src[j] != '\0'; i += 2, j++)
-	{
+static void get_utf16le(const char* src, char dest[], const int size) {
+	for (int i = 0, j = 0; i < size && src[j] != '\0'; i += 2, j++) {
 		dest[i] = src[j];
 	}
 }
 
 
-static void setbytearray(char dest[88], char disk_bits[16], char part_bits[16]){
-	for(int i = 0; i<16;i++){
-		dest[i+32] = part_bits[i];
-		dest[i+56] = disk_bits[i];
+static void setbytearray(char dest[88], unsigned char disk_bits[16], unsigned char part_bits[16]) {
+	for (int i = 0; i < 16; i++) {
+		dest[i + 32] = part_bits[i];
+		dest[i + 56] = disk_bits[i];
 	}
 }
 
 
-int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], char boot_part_bits[16])
-{
+int createBootBCD(const char* path, unsigned char disk_bits[16], unsigned char esp_part_bits[16],
+                  unsigned char boot_part_bits[16]) {
 	setbytearray(boot_partition_bytes, disk_bits, boot_part_bits);
 	setbytearray(esp_bytes, disk_bits, esp_part_bits);
 
@@ -107,7 +105,7 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 		return error;
 	}
 
-	hive_h *handle = hivex_open(path, HIVEX_OPEN_WRITE);
+	hive_h* handle = hivex_open(path, HIVEX_OPEN_WRITE);
 
 	hive_node_h root = hivex_root(handle);
 
@@ -115,18 +113,20 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 
 	char fmodbytes[] = {0x01, 0x00, 0x00, 0x00};
 	hive_set_value fmod = {
-			.key = "FirmwareModified",
-			.t = hive_t_REG_DWORD,
-			.len = 4,
-			.value = fmodbytes};
+		.key = "FirmwareModified",
+		.t = hive_t_REG_DWORD,
+		.len = 4,
+		.value = fmodbytes
+	};
 	hivex_node_set_value(handle, desc, &fmod, 0);
 
 	char systummbytes[] = {0x01, 0x00, 0x00, 0x00};
 	hive_set_value systumm = {
-			.key = "System",
-			.t = hive_t_REG_DWORD,
-			.len = 4,
-			.value = systummbytes};
+		.key = "System",
+		.t = hive_t_REG_DWORD,
+		.len = 4,
+		.value = systummbytes
+	};
 	hivex_node_set_value(handle, desc, &systumm, 0);
 
 
@@ -145,8 +145,7 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 	hive_node_h objs = hivex_node_get_child(handle, root, "Objects");
 
 
-
-	char *node0 = EMSSETTINGS;
+	char* node0 = EMSSETTINGS;
 	//hive_node_h node0_h = hivex_node_add_child(handle, objs, node0);
 	//hive_node_h node0_elem_h = hivex_node_add_child(handle, node0_h, "Elements");
 	hive_node_h node0_h = hivex_node_get_child(handle, objs, node0);
@@ -160,7 +159,7 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 		insertval(handle, node0_elem_h, "16000020", hive_t_REG_BINARY, size, bt16000020);
 	}
 
-	char *node1 = RESUMELDRSETTINGS;
+	char* node1 = RESUMELDRSETTINGS;
 	hive_node_h node1_h = hivex_node_get_child(handle, objs, node1);
 	hive_node_h node1_elem_h = hivex_node_get_child(handle, node1_h, "Elements");
 
@@ -174,25 +173,22 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 
 	//setdesc(handle, node1_h, (char[]){0x04, 0x00, 0x20, 0x20});
 
-	{	// TODO: This is redundant
+	{
+		// TODO: This is redundant
 		int size = 80;
 		char bt14000006[80] = {0};
 		get_utf16le(GLOBALSETTINGS, bt14000006, size);
 		insertval(handle, node1_elem_h, "14000006", hive_t_REG_MULTI_SZ, size, bt14000006);
 	}
 
-	char *node2 = winload_guid;
+	char* node2 = winload_guid;
 	hive_node_h node2_h = hivex_node_add_child(handle, objs, node2);
 	hive_node_h node2_elem_h = hivex_node_add_child(handle, node2_h, "Elements");
 
-	setdesc(handle, node2_h, (char[]){0x03, 0x00, 0x20, 0x10});
-
-	{
-		char *bt11000001 = boot_partition_bytes;
+	setdesc(handle, node2_h, (char[]){0x03, 0x00, 0x20, 0x10}); {
+		char* bt11000001 = boot_partition_bytes;
 		insertval(handle, node2_elem_h, "11000001", hive_t_REG_BINARY, 88, bt11000001);
-	}
-
-	{
+	} {
 		const int size = 60;
 		// Why can't I do this? C is stupid :(
 		// char bt12000002[size] = {0};
@@ -200,68 +196,54 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 		char bt12000002[60] = {0};
 		get_utf16le("\\Windows\\system32\\winload.efi", bt12000002, size);
 		insertval(handle, node2_elem_h, "12000002", hive_t_REG_SZ, size, bt12000002);
-	}
-	{
+	} {
 		const int size = 22;
 		char bt12000004[22] = {0};
 		get_utf16le("Windows 10", bt12000004, size);
 		insertval(handle, node2_elem_h, "12000004", hive_t_REG_SZ, size, bt12000004);
-	}
-	{
+	} {
 		const int size = 12;
 		char bt12000005[12] = {0};
 		get_utf16le(locale, bt12000005, size);
 		insertval(handle, node2_elem_h, "12000005", hive_t_REG_SZ, size, bt12000005);
-	}
-	{
+	} {
 		const int size = 80;
 		char bt14000006[80] = {0};
 		get_utf16le(BOOTLDRSETTINGS, bt14000006, size);
 		insertval(handle, node2_elem_h, "14000006", hive_t_REG_MULTI_SZ, size, bt14000006);
-	}
-	{
+	} {
 		const int size = 1;
 		char bt16000060[1] = {1};
 		insertval(handle, node2_elem_h, "16000060", hive_t_REG_BINARY, size, bt16000060);
-	}
-	{
+	} {
 		const int size = 8;
 		char bt17000077[8] = {0x75, 0x00, 0x00, 0x15, 0x00, 0x00, 0x00, 0x00};
 		insertval(handle, node2_elem_h, "17000077", hive_t_REG_BINARY, size, bt17000077);
-	}
-	{
+	} {
 		const int size = 88;
-		char *bt21000001 = boot_partition_bytes;
+		char* bt21000001 = boot_partition_bytes;
 		insertval(handle, node2_elem_h, "21000001", hive_t_REG_BINARY, size, bt21000001);
-	}
-
-	{
+	} {
 		const int size = 18;
 		char bt22000002[18] = {0};
 		get_utf16le("\\Windows", bt22000002, size);
 		insertval(handle, node2_elem_h, "22000002", hive_t_REG_SZ, size, bt22000002);
-	}
-
-	{
+	} {
 		const int size = 78;
 		char bt23000003[78] = {0};
 		get_utf16le(winresume_guid, bt23000003, size);
 		insertval(handle, node2_elem_h, "23000003", hive_t_REG_SZ, size, bt23000003);
-	}
-
-	{
+	} {
 		const int size = 8;
 		char bt25000020[8] = {0};
 		insertval(handle, node2_elem_h, "25000020", hive_t_REG_BINARY, size, bt25000020);
-	}
-
-	{
+	} {
 		const int size = 8;
 		char bt250000c2[8] = {0x01};
 		insertval(handle, node2_elem_h, "250000c2", hive_t_REG_BINARY, size, bt250000c2);
 	}
 
-	char *node3a = DBGSETTINGS;
+	char* node3a = DBGSETTINGS;
 	hive_node_h node3a_h = hivex_node_add_child(handle, objs, node3a);
 	hive_node_h node3a_elem_h = hivex_node_add_child(handle, node3a_h, "Elements");
 
@@ -275,13 +257,11 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 	}
 
 
-
 	// char *node3b = BADMEMORY;
 	// hive_node_h node3b_h = hivex_node_add_child(handle, objs, node3b);
 	// hive_node_h node3b_elem_h = hivex_node_add_child(handle, node3b_h, "Elements");
 
 	//setdesc(handle, node3b_h, (char[]){0x00, 0x00, 0x10, 0x20});
-
 
 
 	// LMAO after all that effort, turns out this is f#¢k1ng reduntant
@@ -344,7 +324,7 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 	// 	insertval(handle, node5a_elem_h, "250000f5", hive_t_REG_BINARY, size, bt250000f5);
 	// }
 
-	char *node5 = BOOTMGR;
+	char* node5 = BOOTMGR;
 	hive_node_h node5_h = hivex_node_get_child(handle, objs, node5);
 	hive_node_h node5_elem_h = hivex_node_get_child(handle, node5_h, "Elements");
 
@@ -388,20 +368,17 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 		char bt23000003[78] = {0};
 		get_utf16le(winload_guid, bt23000003, size);
 		insertval(handle, node5_elem_h, "23000003", hive_t_REG_SZ, size, bt23000003);
-	}
-	{
+	} {
 		const int size = 78;
 		char bt23000006[78] = {0};
 		get_utf16le(winresume_guid, bt23000006, size);
 		insertval(handle, node5_elem_h, "23000006", hive_t_REG_SZ, size, bt23000006);
-	}
-	{
+	} {
 		const int size = 80;
 		char bt24000001[80] = {0};
 		get_utf16le(winload_guid, bt24000001, size);
 		insertval(handle, node5_elem_h, "24000001", hive_t_REG_MULTI_SZ, size, bt24000001);
-	}
-	{
+	} {
 		const int size = 80;
 		char bt24000010[80] = {0};
 		get_utf16le(MEMDIAG, bt24000010, size);
@@ -414,7 +391,7 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 	// 	insertval(handle, node5_elem_h, "25000004", hive_t_REG_BINARY, size, bt25000004);
 	// }
 
-	char *node6 = MEMDIAG;
+	char* node6 = MEMDIAG;
 	hive_node_h node6_h = hivex_node_add_child(handle, objs, node6);
 	hive_node_h node6_elem_h = hivex_node_add_child(handle, node6_h, "Elements");
 
@@ -424,14 +401,12 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 		const int size = 88;
 		char* bt11000001 = esp_bytes;
 		insertval(handle, node6_elem_h, "11000001", hive_t_REG_BINARY, size, bt11000001);
-	}
-	{
+	} {
 		const int size = 64;
 		char bt12000002[64] = {0};
 		get_utf16le("\\EFI\\Microsoft\\Boot\\memtest.efi", bt12000002, size);
 		insertval(handle, node6_elem_h, "12000002", hive_t_REG_SZ, size, bt12000002);
-	}
-	{
+	} {
 		const int size = 52;
 		char bt12000004[52] = {0};
 		get_utf16le("Windows Memory Diagnostic", bt12000004, size);
@@ -457,71 +432,59 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 	// }
 
 
-
-	char *node7 = winresume_guid;
+	char* node7 = winresume_guid;
 	hive_node_h node7_h = hivex_node_add_child(handle, objs, node7);
 	hive_node_h node7_elem_h = hivex_node_add_child(handle, node7_h, "Elements");
 
-	setdesc(handle, node7_h, (char[]){0x04, 0x00, 0x20, 0x10});
-
-	{
+	setdesc(handle, node7_h, (char[]){0x04, 0x00, 0x20, 0x10}); {
 		const int size = 88;
-		char *bt11000001 = boot_partition_bytes;
+		char* bt11000001 = boot_partition_bytes;
 		insertval(handle, node7_elem_h, "11000001", hive_t_REG_BINARY, size, bt11000001);
-	}
-	{
+	} {
 		const int size = 64;
 		char bt12000002[64] = {0};
 		get_utf16le("\\Windows\\system32\\winresume.efi", bt12000002, size);
 		insertval(handle, node7_elem_h, "12000002", hive_t_REG_SZ, size, bt12000002);
-	}
-	{
+	} {
 		const int size = 54;
 		char bt12000004[54] = {0};
 		get_utf16le("Windows Resume Application", bt12000004, size);
 		insertval(handle, node7_elem_h, "12000004", hive_t_REG_SZ, size, bt12000004);
-	}
-	{
+	} {
 		const int size = 12;
 		char bt12000005[12] = {0};
 		get_utf16le(locale, bt12000005, size);
 		insertval(handle, node7_elem_h, "12000005", hive_t_REG_SZ, size, bt12000005);
-	}
-	{
+	} {
 		const int size = 80;
 		char bt14000006[80] = {0};
 		get_utf16le(RESUMELDRSETTINGS, bt14000006, size);
 		insertval(handle, node7_elem_h, "14000006", hive_t_REG_MULTI_SZ, size, bt14000006);
-	}
-	{
+	} {
 		const int size = 1;
 		char bt16000060[1] = {0x01};
 		insertval(handle, node7_elem_h, "16000060", hive_t_REG_BINARY, size, bt16000060);
-	}
-	{
+	} {
 		const int size = 8;
 		char bt17000077[8] = {0x75, 0x00, 0x00, 0x15, 0x00, 0x00, 0x00, 0x00};
 		insertval(handle, node7_elem_h, "17000077", hive_t_REG_BINARY, size, bt17000077);
-	}
-	{
+	} {
 		const int size = 88;
-		char *bt21000001 = boot_partition_bytes;
+		char* bt21000001 = boot_partition_bytes;
 		insertval(handle, node7_elem_h, "21000001", hive_t_REG_BINARY, size, bt21000001);
-	}
-	{
+	} {
 		const int size = 28;
 		char bt22000002[28] = {0};
 		get_utf16le("\\hiberfil.sys", bt22000002, size);
 		insertval(handle, node7_elem_h, "22000002", hive_t_REG_SZ, size, bt22000002);
-	}
-	{
+	} {
 		const int size = 8;
 		char bt25000008[8] = {0x01};
 		insertval(handle, node7_elem_h, "25000008", hive_t_REG_BINARY, size, bt25000008);
 	}
 
-	for (int i = 0; i<7;i++) {
-		char *node = faaltu[i];
+	for (int i = 0; i < 7; i++) {
+		char* node = faaltu[i];
 		hive_node_h node_h = hivex_node_get_child(handle, objs, node);
 		hivex_node_delete_child(handle, node_h);
 	}
@@ -550,12 +513,11 @@ int createBootBCD(const char* path, char disk_bits[16], char esp_part_bits[16], 
 }
 
 
-int createRecBCD(char disk_bits[16], char esp_part_bits[16])
-{
+int createRecBCD(unsigned char disk_bits[16], unsigned char esp_part_bits[16]) {
 	setbytearray(esp_bytes, disk_bits, esp_part_bits);
 
 
-	hive_h *handle = hivex_open("cerBCD", HIVEX_OPEN_WRITE);
+	hive_h* handle = hivex_open("cerBCD", HIVEX_OPEN_WRITE);
 
 	hive_node_h root = hivex_root(handle);
 
@@ -563,10 +525,11 @@ int createRecBCD(char disk_bits[16], char esp_part_bits[16])
 
 	char fmodbytes[] = {0x01, 0x00, 0x00, 0x00};
 	hive_set_value fmod = {
-			.key = "FirmwareModified",
-			.t = hive_t_REG_DWORD,
-			.len = 4,
-			.value = fmodbytes};
+		.key = "FirmwareModified",
+		.t = hive_t_REG_DWORD,
+		.len = 4,
+		.value = fmodbytes
+	};
 	hivex_node_set_value(handle, desc, &fmod, 0);
 
 
@@ -581,23 +544,20 @@ int createRecBCD(char disk_bits[16], char esp_part_bits[16])
 	hivex_node_set_value(handle, desc, &keyName, 0);
 
 
-
 	hive_node_h objs = hivex_node_get_child(handle, root, "Objects");
 
 
-	char *node0 = EMSSETTINGS;
+	char* node0 = EMSSETTINGS;
 	hive_node_h node0_h = hivex_node_add_child(handle, objs, node0);
 	hive_node_h node0_elem_h = hivex_node_add_child(handle, node0_h, "Elements");
 
-	setdesc(handle, node0_h, (char[]){0x00, 0x00, 0x10, 0x20});
-
-	{
+	setdesc(handle, node0_h, (char[]){0x00, 0x00, 0x10, 0x20}); {
 		int size = 1;
 		char bt16000020[1] = {0};
 		insertval(handle, node0_elem_h, "16000020", hive_t_REG_BINARY, size, bt16000020);
 	}
 
-	char *node1 = RESUMELDRSETTINGS;
+	char* node1 = RESUMELDRSETTINGS;
 	hive_node_h node1_h = hivex_node_add_child(handle, objs, node1);
 	hive_node_h node1_elem_h = hivex_node_add_child(handle, node1_h, "Elements");
 
@@ -608,44 +568,36 @@ int createRecBCD(char disk_bits[16], char esp_part_bits[16])
 	// 		.len = 4,
 	// 		.value = node1_desc_type_bytes};
 	// hivex_node_set_value(handle, node1_desc_h, &node1_desc_type, 0);
-	setdesc(handle, node1_h, (char[]){0x04, 0x00, 0x20, 0x20});
-
-	{
+	setdesc(handle, node1_h, (char[]){0x04, 0x00, 0x20, 0x20}); {
 		int size = 80;
 		char bt14000006[80] = {0};
 		get_utf16le(GLOBALSETTINGS, bt14000006, size);
 		insertval(handle, node1_elem_h, "14000006", hive_t_REG_MULTI_SZ, size, bt14000006);
 	}
 
-	char *node3a = DBGSETTINGS;
+	char* node3a = DBGSETTINGS;
 	hive_node_h node3a_h = hivex_node_add_child(handle, objs, node3a);
 	hive_node_h node3a_elem_h = hivex_node_add_child(handle, node3a_h, "Elements");
 
-	setdesc(handle, node3a_h, (char[]){0x00, 0x00, 0x10, 0x20});
-
-	{
+	setdesc(handle, node3a_h, (char[]){0x00, 0x00, 0x10, 0x20}); {
 		int size = 8;
 		char bt15000011[8] = {0x04};
 		insertval(handle, node3a_elem_h, "15000011", hive_t_REG_BINARY, size, bt15000011);
 	}
 
 
-
-	char *node3b = BADMEMORY;
+	char* node3b = BADMEMORY;
 	hive_node_h node3b_h = hivex_node_add_child(handle, objs, node3b);
 	hive_node_h node3b_elem_h = hivex_node_add_child(handle, node3b_h, "Elements");
 
 	setdesc(handle, node3b_h, (char[]){0x00, 0x00, 0x10, 0x20});
 
 
-
-	char *node3 = BOOTLDRSETTINGS;
+	char* node3 = BOOTLDRSETTINGS;
 	hive_node_h node3_h = hivex_node_add_child(handle, objs, node3);
 	hive_node_h node3_elem_h = hivex_node_add_child(handle, node3_h, "Elements");
 
-	setdesc(handle, node3_h, (char[]){0x03, 0x00, 0x20, 0x20});
-
-	{
+	setdesc(handle, node3_h, (char[]){0x03, 0x00, 0x20, 0x20}); {
 		const int size = 158;
 		char bt14000006[158] = {0};
 		get_utf16le(GLOBALSETTINGS, bt14000006, 76);
@@ -655,14 +607,11 @@ int createRecBCD(char disk_bits[16], char esp_part_bits[16])
 	}
 
 
-
-	char *node4 = GLOBALSETTINGS; // Used in node1_elem_14000006_elem
+	char* node4 = GLOBALSETTINGS; // Used in node1_elem_14000006_elem
 	hive_node_h node4_h = hivex_node_add_child(handle, objs, node4);
 	hive_node_h node4_elem_h = hivex_node_add_child(handle, node4_h, "Elements");
 
-	setdesc(handle, node4_h, (char[]){0x00, 0x00, 0x10, 0x20});
-
-	{
+	setdesc(handle, node4_h, (char[]){0x00, 0x00, 0x10, 0x20}); {
 		const int size = 236;
 		char bt14000006[236] = {0};
 		get_utf16le(DBGSETTINGS, bt14000006, 76);
@@ -674,65 +623,53 @@ int createRecBCD(char disk_bits[16], char esp_part_bits[16])
 	}
 
 
-
-	char *node5a = HYPERVISORSETTINGS;
+	char* node5a = HYPERVISORSETTINGS;
 	hive_node_h node5a_h = hivex_node_add_child(handle, objs, node5a);
 	hive_node_h node5a_elem_h = hivex_node_add_child(handle, node5a_h, "Elements");
 
-	setdesc(handle, node5a_h, (char[]){0x03, 0x00, 0x20, 0x20});
-
-	{
+	setdesc(handle, node5a_h, (char[]){0x03, 0x00, 0x20, 0x20}); {
 		int size = 8;
 		char bt250000f3[8] = {0};
 		insertval(handle, node5a_elem_h, "250000f3", hive_t_REG_BINARY, size, bt250000f3);
-	}
-	{
+	} {
 		int size = 8;
 		char bt250000f4[8] = {0x01};
 		insertval(handle, node5a_elem_h, "250000f4", hive_t_REG_BINARY, size, bt250000f4);
-	}
-	{
+	} {
 		int size = 8;
 		char bt250000f5[8] = {[1] = 0xC2, [2] = 0x01};
 		insertval(handle, node5a_elem_h, "250000f5", hive_t_REG_BINARY, size, bt250000f5);
 	}
 
-	char *node5 = BOOTMGR;
+	char* node5 = BOOTMGR;
 	hive_node_h node5_h = hivex_node_add_child(handle, objs, node5);
 	hive_node_h node5_elem_h = hivex_node_add_child(handle, node5_h, "Elements");
 
-	setdesc(handle, node5_h, (char[]){0x02, 0x00, 0x10, 0x10});
-
-	{
+	setdesc(handle, node5_h, (char[]){0x02, 0x00, 0x10, 0x10}); {
 		const int size = 88;
 		char* bt11000001 = esp_bytes;
 		insertval(handle, node5_elem_h, "11000001", hive_t_REG_BINARY, size, bt11000001);
-	}
-	{
+	} {
 		const int size = 66;
 		char bt12000002[66] = {0};
 		get_utf16le("\\EFI\\Microsoft\\Boot\\bootmgfw.efi", bt12000002, size);
 		insertval(handle, node5_elem_h, "12000002", hive_t_REG_SZ, size, bt12000002);
-	}
-	{
+	} {
 		const int size = 42;
 		char bt12000004[42] = {0};
 		get_utf16le("Windows Boot Manager", bt12000004, size);
 		insertval(handle, node5_elem_h, "12000004", hive_t_REG_SZ, size, bt12000004);
-	}
-	{
+	} {
 		const int size = 12;
 		char bt12000005[12] = {0};
 		get_utf16le(locale, bt12000005, size);
 		insertval(handle, node5_elem_h, "12000005", hive_t_REG_SZ, size, bt12000005);
-	}
-	{
+	} {
 		const int size = 80;
 		char bt14000006[80] = {0};
 		get_utf16le(GLOBALSETTINGS, bt14000006, size);
 		insertval(handle, node5_elem_h, "14000006", hive_t_REG_MULTI_SZ, size, bt14000006);
-	}
-	{
+	} {
 		const int size = 8;
 		char bt25000004[8] = {0x1E};
 		insertval(handle, node5_elem_h, "25000004", hive_t_REG_BINARY, size, bt25000004);
@@ -760,4 +697,3 @@ int createRecBCD(char disk_bits[16], char esp_part_bits[16])
 
 	return 0;
 }
-

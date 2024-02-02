@@ -6,23 +6,22 @@
 #include "libsufur.h"
 
 #include <ctype.h>
-#include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <libfdisk/libfdisk.h>
 #include <libudev.h>
+#include <stdlib.h>
+#include <string.h>
 #include <libmount/libmount.h>
-
+#include <sys/stat.h>
 #include "utils.h"
 #include "wtg.h"
 #include "partition.h"
 #include "format.h"
-#include "strutils.h"
+// #include "strutils.h"
 
 
-#define ISO_MNT_PATH "/mnt/sufurISO"
-#define USB_MNT_PATH "/mnt/sufurUSB"
 // static size_t unhexmangle_to_buffer(const char *s, char *buf, size_t len);
 
 static struct udev_device*
@@ -48,34 +47,13 @@ get_child(
 	return child;
 }
 
-static int64_t get_drive_size(const char* device) {
-	int error = 0;
-	struct fdisk_context* cxt = fdisk_new_context();
+static int64_t get_drive_size(const usb_drive* drive) {
+	struct fdisk_context* cxt = NULL;
 
-	if (!cxt)
-		return error = -1;
-
-	error = faccessat(-1, device, F_OK, AT_EACCESS);
-
+	const int error = utils_get_fdisk_context(drive, &cxt, 1);
 	if (error) {
-		printf("Device does not exist\n");
-		return error;
+		return 0; // 0 size denotes error while getting size
 	}
-
-	error = faccessat(-1, device, R_OK, AT_EACCESS);
-
-	if (error) {
-		printf("Please run the program as root\n");
-		return error;
-	}
-
-	error = fdisk_assign_device(cxt, device, 1);
-
-	if (error) {
-		printf("Failed to assign fdisk device\n");
-		return error;
-	}
-
 	// struct fdisk_table* tb = fdisk_new_table();
 	// error = fdisk_get_partitions(cxt, &tb);
 	//
@@ -84,7 +62,7 @@ static int64_t get_drive_size(const char* device) {
 	// 	return error;
 	// }
 
-	int64_t bytes = fdisk_get_nsectors(cxt) * fdisk_get_sector_size(cxt);
+	const int64_t bytes = fdisk_get_nsectors(cxt) * fdisk_get_sector_size(cxt);
 	// printf("Size: %lu\n", bytes);
 	// printf("%lu partitions found\n", fdisk_table_get_nents(tb));
 
@@ -118,13 +96,12 @@ static int64_t get_drive_size(const char* device) {
 	// 	}
 	// }
 
-	fdisk_deassign_device(cxt, 0);
+	fdisk_deassign_device(cxt, 1);
 
 	return bytes;
 }
 
-int enumerate_usb_mass_storage(usb_drive **var) {
-
+int enumerate_usb_mass_storage(usb_drive** var) {
 	int i = 0, count = 0;
 
 	struct udev* udev = udev_new();
@@ -135,13 +112,13 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 	udev_enumerate_scan_devices(enumerate);
 
 	struct udev_list_entry* devices = udev_enumerate_get_list_entry(enumerate);
-	struct udev_list_entry* entry, *iter;
+	struct udev_list_entry *entry, *iter;
 	udev_list_entry_foreach(iter, devices) {
 		count++;
 	}
 
-	*var = (usb_drive*)malloc(sizeof(usb_drive)*count);
-	usb_drive *val = *var;
+	*var = (usb_drive *) malloc(sizeof(usb_drive) * count);
+	usb_drive* val = *var;
 
 
 	udev_list_entry_foreach(entry, devices) {
@@ -151,7 +128,7 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 		struct udev_device* block = get_child(udev, scsi, "block");
 		struct udev_device* scsi_disk = get_child(udev, scsi, "scsi_disk");
 
-		struct udev_device* usb
+		const struct udev_device* usb
 				= udev_device_get_parent_with_subsystem_devtype(
 					scsi, "usb", "usb_device");
 
@@ -161,12 +138,12 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 			const char* devnode = udev_device_get_devnode(block);
 
 			val[i].devnode = strdup(devnode);
-			val[i].size = get_drive_size(devnode);
+			val[i].size = 0;
 			val[i].vendor_name = strdup(udev_device_get_sysattr_value(scsi, "vendor"));
 			val[i].model_name = strdup(udev_device_get_sysattr_value(scsi, "model"));
 			//printf("%s\n", devnode);
+			val[i].size = get_drive_size(&val[i]);
 			i++;
-
 		}
 
 		if (block)
@@ -185,32 +162,9 @@ int enumerate_usb_mass_storage(usb_drive **var) {
 }
 
 static int prepare_fst_drive(const usb_drive* drive) {
-
-	const char* device = drive->devnode;
-	int error = 0;
-	struct fdisk_context* cxt = fdisk_new_context();
-
-	if (!cxt)
-		return error = -1;
-
-	error = faccessat(-1, device, F_OK, AT_EACCESS);
-
+	struct fdisk_context* cxt = NULL;
+	int error = utils_get_fdisk_context(drive, &cxt, 0);
 	if (error) {
-		printf("Device does not exist\n");
-		return error;
-	}
-
-	error = faccessat(-1, device, R_OK, AT_EACCESS);
-
-	if (error) {
-		printf("Please run the program as root\n");
-		return error;
-	}
-
-	error = fdisk_assign_device(cxt, device, 0);
-
-	if (error) {
-		printf("Failed to assign fdisk device\n");
 		return error;
 	}
 
@@ -231,7 +185,7 @@ static int prepare_fst_drive(const usb_drive* drive) {
 	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, 0);
 	char* part_node = NULL;
 	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
-	printf("\nDevice: %s\n", part_node);
+	printf("Formatting Device: %s\n", part_node);
 
 	fdisk_deassign_device(cxt, 0);
 
@@ -241,32 +195,9 @@ static int prepare_fst_drive(const usb_drive* drive) {
 }
 
 static int prepare_dual_fst_drive(const usb_drive* drive) {
-
-	const char* device = drive->devnode;
-	int error = 0;
-	struct fdisk_context* cxt = fdisk_new_context();
-
-	if (!cxt)
-		return error = -1;
-
-	error = faccessat(-1, device, F_OK, AT_EACCESS);
-
+	struct fdisk_context* cxt = NULL;
+	int error = utils_get_fdisk_context(drive, &cxt, 0);
 	if (error) {
-		printf("Device does not exist\n");
-		return error;
-	}
-
-	error = faccessat(-1, device, R_OK, AT_EACCESS);
-
-	if (error) {
-		printf("Please run the program as root\n");
-		return error;
-	}
-
-	error = fdisk_assign_device(cxt, device, 0);
-
-	if (error) {
-		printf("Failed to assign fdisk device\n");
 		return error;
 	}
 
@@ -286,6 +217,10 @@ static int prepare_dual_fst_drive(const usb_drive* drive) {
 	struct fdisk_partition* ntfs_pt = fdisk_table_get_partition_by_partno(tb, 0);
 	char* ntfs_part_node = NULL;
 	error = fdisk_partition_to_string(ntfs_pt, cxt, FDISK_FIELD_DEVICE, &ntfs_part_node);
+	if (error) {
+		printf("Error while getting NTFS partition device\n");
+		return error;
+	}
 	printf("\nDevice: %s\n", ntfs_part_node);
 
 
@@ -306,32 +241,9 @@ static int prepare_dual_fst_drive(const usb_drive* drive) {
 }
 
 static int prepare_windows_to_go_drive(const usb_drive* drive, unsigned char uuidarray[3][16]) {
-
-	const char* device = drive->devnode;
-	int error = 0;
-	struct fdisk_context* cxt = fdisk_new_context();
-
-	if (!cxt)
-		return error = -1;
-
-	error = faccessat(-1, device, F_OK, AT_EACCESS);
-
+	struct fdisk_context* cxt = NULL;
+	int error = utils_get_fdisk_context(drive, &cxt, 0);
 	if (error) {
-		printf("Device does not exist\n");
-		return error;
-	}
-
-	error = faccessat(-1, device, R_OK, AT_EACCESS);
-
-	if (error) {
-		printf("Please run the program as root\n");
-		return error;
-	}
-
-	error = fdisk_assign_device(cxt, device, 0);
-
-	if (error) {
-		printf("Failed to assign fdisk device\n");
 		return error;
 	}
 
@@ -351,6 +263,10 @@ static int prepare_windows_to_go_drive(const usb_drive* drive, unsigned char uui
 	struct fdisk_partition* esp_pt = fdisk_table_get_partition_by_partno(tb, 0);
 	char* esp_part_node = NULL;
 	error = fdisk_partition_to_string(esp_pt, cxt, FDISK_FIELD_DEVICE, &esp_part_node);
+	if (error) {
+		printf("Error getting ESP partition device\n");
+		return error;
+	}
 	printf("\nESP Device: %s\n", esp_part_node);
 
 
@@ -374,13 +290,13 @@ static int prepare_windows_to_go_drive(const usb_drive* drive, unsigned char uui
 static int mount_ISO(const char* isopath) {
 	mkdir(ISO_MNT_PATH, 0700);
 
-	struct libmnt_context *mntcxt = mnt_new_context();
+	struct libmnt_context* mntcxt = mnt_new_context();
 
 	mnt_context_set_source(mntcxt, isopath);
 	mnt_context_set_target(mntcxt, ISO_MNT_PATH);
 
-	int error = mnt_context_mount(mntcxt);
-	if(error) {
+	const int error = mnt_context_mount(mntcxt);
+	if (error) {
 		printf("Error while mounting ISO. Aborting!\n");
 		return error;
 	}
@@ -390,31 +306,10 @@ static int mount_ISO(const char* isopath) {
 }
 
 static int mount_device(const usb_drive* drive) {
-	const char* device = drive->devnode;
-	int error = 0;
-	struct fdisk_context* cxt = fdisk_new_context();
-
-	if (!cxt)
-		return error = -1;
-
-	error = faccessat(-1, device, F_OK, AT_EACCESS);
+	struct fdisk_context* cxt = NULL;
+	int error = utils_get_fdisk_context(drive, &cxt, 1);
 
 	if (error) {
-		printf("Device does not exist\n");
-		return error;
-	}
-
-	error = faccessat(-1, device, R_OK, AT_EACCESS);
-
-	if (error) {
-		printf("Please run the program as root\n");
-		return error;
-	}
-
-	error = fdisk_assign_device(cxt, device, 1);
-
-	if (error) {
-		printf("Failed to assign fdisk device\n");
 		return error;
 	}
 
@@ -429,21 +324,24 @@ static int mount_device(const usb_drive* drive) {
 	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, 0);
 	char* part_node = NULL;
 	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+	if (error) {
+		printf("Error getting USB 0th partition device\n");
+		return error;
+	}
 	printf("\nMounting Partion: %s\n", part_node);
 
-	// TODO: Missing a call to fdisk_deassign_device
-
+	fdisk_deassign_device(cxt, 1);
 
 	mkdir(USB_MNT_PATH, 0700);
 
 
-	struct libmnt_context *mntcxt = mnt_new_context();
+	struct libmnt_context* mntcxt = mnt_new_context();
 
 	mnt_context_set_source(mntcxt, part_node);
 	mnt_context_set_target(mntcxt, USB_MNT_PATH);
 
 	error = mnt_context_mount(mntcxt);
-	if(error) {
+	if (error) {
 		printf("Error while mounting USB. Aborting!\n");
 		return error;
 	}
@@ -457,32 +355,10 @@ static int copy_ISO_files() {
 	return 0;
 }
 
-static int flash_uefi_ntfs_img(const usb_drive *drive) {
-	const char* device = drive->devnode;
-	int error = 0;
-	struct fdisk_context* cxt = fdisk_new_context();
-
-	if (!cxt)
-		return error = -1;
-
-	error = faccessat(-1, device, F_OK, AT_EACCESS);
-
+static int flash_uefi_ntfs_img(const usb_drive* drive) {
+	struct fdisk_context* cxt = NULL;
+	int error = utils_get_fdisk_context(drive, &cxt, 1);
 	if (error) {
-		printf("Device does not exist\n");
-		return error;
-	}
-
-	error = faccessat(-1, device, R_OK, AT_EACCESS);
-
-	if (error) {
-		printf("Please run the program as root\n");
-		return error;
-	}
-
-	error = fdisk_assign_device(cxt, device, 1);
-
-	if (error) {
-		printf("Failed to assign fdisk device\n");
 		return error;
 	}
 
@@ -498,19 +374,23 @@ static int flash_uefi_ntfs_img(const usb_drive *drive) {
 	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, vfat_part_no);
 	char* part_node = NULL;
 	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+	if (error) {
+		printf("Error getting vfat partition device\n");
+		return error;
+	}
 	printf("\nFlashing Partion: %s\n", part_node);
 
 	copy_file("uefi-ntfs.img", part_node);
 
 	return 0;
 }
-static int unmount_ALL() {
 
-	struct libmnt_context *mntcxt = mnt_new_context();
+static int unmount_ALL() {
+	struct libmnt_context* mntcxt = mnt_new_context();
 
 	mnt_context_set_target(mntcxt, ISO_MNT_PATH);
 	int error = mnt_context_umount(mntcxt);
-	if(error) {
+	if (error) {
 		printf("Error while unmounting ISO. Continuing\n");
 	}
 	mnt_reset_context(mntcxt);
@@ -518,7 +398,7 @@ static int unmount_ALL() {
 
 	mnt_context_set_target(mntcxt, USB_MNT_PATH);
 	error = mnt_context_umount(mntcxt);
-	if(error) {
+	if (error) {
 		printf("Error while unmounting USB. Continuing\n");
 	}
 	mnt_free_context(mntcxt);
@@ -527,25 +407,34 @@ static int unmount_ALL() {
 }
 
 static int lock_drive(const usb_drive* drive) {
-	struct fdisk_context* cxt = fdisk_new_context();
-	fdisk_assign_device(cxt, drive->devnode, 1);
+	struct fdisk_context* cxt = NULL;
+	int error = utils_get_fdisk_context(drive, &cxt, 1);
+
+	if (error) {
+		return error;
+	}
 
 	struct fdisk_table* tb = fdisk_new_table();
-	fdisk_get_partitions(cxt, &tb);
+	error = fdisk_get_partitions(cxt, &tb);
 
-	int nums = fdisk_table_get_nents(tb);
-	for(int i = 0;i<nums;i++) {
+	if (error) {
+		printf("Error while reading partition table\n");
+		return error;
+	}
+
+	const int nums = fdisk_table_get_nents(tb);
+	for (int i = 0; i < nums; i++) {
 		struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, i);
 		char* part_node = NULL;
 		fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
-		struct libmnt_context *mntcxt = mnt_new_context();
+		struct libmnt_context* mntcxt = mnt_new_context();
 
 		mnt_context_set_target(mntcxt, part_node);
 
 		printf("Device: %s\n", part_node);
 
-		int error = mnt_context_umount(mntcxt);
-		if(error) {
+		error = mnt_context_umount(mntcxt);
+		if (error) {
 			printf("Error while unmounting partitions. Aborting!\n");
 			fdisk_deassign_device(cxt, 1);
 			return error;
@@ -590,7 +479,6 @@ int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 	printf("Done\n");
 
 	return 0;
-
 }
 
 
@@ -600,7 +488,7 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	printf("Formatting USB drive\n");
 
 	int error = lock_drive(drive);
-	if(error) {
+	if (error) {
 		printf("Error: %d\n", error);
 		return error;
 	}
@@ -610,30 +498,9 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	wimapply_w2go(drive);
 
 
-	const char* device = drive->devnode;
-	struct fdisk_context* cxt = fdisk_new_context();
-
-	if (!cxt)
-		return error = -1;
-
-	error = faccessat(-1, device, F_OK, AT_EACCESS);
-
+	struct fdisk_context* cxt = NULL;
+	error = utils_get_fdisk_context(drive, &cxt, 1);
 	if (error) {
-		printf("Device does not exist\n");
-		return error;
-	}
-
-	error = faccessat(-1, device, R_OK, AT_EACCESS);
-
-	if (error) {
-		printf("Please run the program as root\n");
-		return error;
-	}
-
-	error = fdisk_assign_device(cxt, device, 1);
-
-	if (error) {
-		printf("Failed to assign fdisk device\n");
 		return error;
 	}
 
@@ -648,6 +515,11 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	struct fdisk_partition* ntfs_pt = fdisk_table_get_partition_by_partno(tb, 1);
 	char* ntfs_part_node = NULL;
 	error = fdisk_partition_to_string(ntfs_pt, cxt, FDISK_FIELD_DEVICE, &ntfs_part_node);
+	if (error) {
+		printf("Error getting ntfs partition device\n");
+		return error;
+	}
+
 	printf("\nMounting Partion: %s\n", ntfs_part_node);
 	mount_partition(ntfs_part_node, WTG_NTFS_MNT_PATH);
 
@@ -655,9 +527,14 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	struct fdisk_partition* esp_pt = fdisk_table_get_partition_by_partno(tb, 0);
 	char* esp_part_node = NULL;
 	error = fdisk_partition_to_string(esp_pt, cxt, FDISK_FIELD_DEVICE, &esp_part_node);
-	printf("\nMounting Partion: %s\n",esp_part_node);
+	if (error) {
+		printf("Error getting esp partition device\n");
+		return error;
+	}
+
+	printf("\nMounting Partion: %s\n", esp_part_node);
 	mount_partition(esp_part_node, WTG_ESP_MNT_PATH);
-	// TODO: Missing a call to fdisk_deassign_device
+
 	fdisk_deassign_device(cxt, 1);
 
 
@@ -695,7 +572,6 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	printf("Done\n");
 
 	return 0;
-
 }
 
 int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
@@ -706,19 +582,19 @@ int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 		return -1;
 	}
 
-	 printf("Mounting ISO\n");
+	printf("Mounting ISO\n");
 	// TODO: Handle error in mount
-	 mount_ISO(isopath);
+	mount_ISO(isopath);
 
-	 printf("Checking if it is Windows ISO\n");
+	printf("Checking if it is Windows ISO\n");
 
-	 const int isWin = isWindowsISO();
+	const int isWin = isWindowsISO();
 
 
 	if ((isWin) && isWin2GO) {
 		printf("Making Windows to Go drive\n");
 		return make_windows_to_go(drive, isopath);
-	}else if(isWin) {
+	} else if (isWin) {
 		printf("Detected Windows ISO! Will use UEFI:NTFS\n");
 		return make_windows_bootable(drive, isopath);
 	}
@@ -748,5 +624,4 @@ int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	printf("Done\n");
 
 	return 0;
-
 }
