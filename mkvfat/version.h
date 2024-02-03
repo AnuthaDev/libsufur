@@ -23,7 +23,7 @@
 #ifndef _version_h
 #define _version_h
 
-#define VERSION "@PACKAGE_VERSION@"
-#define VERSION_DATE "@RELEASE_DATE@"
+#define VERSION "4.2"
+#define VERSION_DATE "2021-01-31"
 
 #endif

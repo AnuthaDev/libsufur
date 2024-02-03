@@ -1532,7 +1532,7 @@ static void usage(const char *name, int exitval)
 /* The "main" entry point into the utility - we pick up the options and attempt to process them in some sort of sensible
    way.  In the event that some/all of the options are invalid we need to tell the user so that something can be done! */
 
-int main(int argc, char **argv)
+int mkvfat(int argc, char **argv)
 {
     int c;
     char *tmp;
@@ -2035,5 +2035,8 @@ int main(int argc, char **argv)
     if (fsync(dev) < 0)
         pdie("unable to synchronize %s", device_name);
 
-    exit(0);			/* Terminate with no errors! */
+	//
+	close(dev);
+
+    return 0;			/* Return with no errors! */
 }

@@ -613,7 +613,9 @@ int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 
 
 	printf("Mounting Device\n");
-	mount_device(drive);
+	if ((error = mount_device(drive))){
+		return error;
+	}
 
 	printf("Copying ISO files\n");
 	copy_ISO_files();
