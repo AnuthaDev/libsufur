@@ -577,53 +577,58 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	setbuf(stdout, NULL);
 
-	if (!is_valid_ISO(isopath)) {
-		printf("Invalid ISO file\n");
-		return -1;
-	}
-
-	printf("Mounting ISO\n");
-	// TODO: Handle error in mount
-	mount_ISO(isopath);
-
-	printf("Checking if it is Windows ISO\n");
-
-	const int isWin = isWindowsISO();
+	format_ext2("/dev/sda1");
+	format_ext3("/dev/sda1");
+	format_ext4("/dev/sda1");
 
 
-	if ((isWin) && isWin2GO) {
-		printf("Making Windows to Go drive\n");
-		return make_windows_to_go(drive, isopath);
-	} else if (isWin) {
-		printf("Detected Windows ISO! Will use UEFI:NTFS\n");
-		return make_windows_bootable(drive, isopath);
-	}
-
-	printf("Did not detect Windows ISO!\n");
-	printf("Proceeding with simple File System Transposition\n");
-
-	printf("Formatting USB drive\n");
-	int error = lock_drive(drive);
-	if (error) {
-		printf("Error: %d\n", error);
-		return error;
-	}
-
-	prepare_fst_drive(drive);
-
-
-	printf("Mounting Device\n");
-	if ((error = mount_device(drive))){
-		return error;
-	}
-
-	printf("Copying ISO files\n");
-	copy_ISO_files();
-
-	printf("Unmounting All");
-	unmount_ALL();
-
-	printf("Done\n");
+	// if (!is_valid_ISO(isopath)) {
+	// 	printf("Invalid ISO file\n");
+	// 	return -1;
+	// }
+	//
+	// printf("Mounting ISO\n");
+	// // TODO: Handle error in mount
+	// mount_ISO(isopath);
+	//
+	// printf("Checking if it is Windows ISO\n");
+	//
+	// const int isWin = isWindowsISO();
+	//
+	//
+	// if ((isWin) && isWin2GO) {
+	// 	printf("Making Windows to Go drive\n");
+	// 	return make_windows_to_go(drive, isopath);
+	// } else if (isWin) {
+	// 	printf("Detected Windows ISO! Will use UEFI:NTFS\n");
+	// 	return make_windows_bootable(drive, isopath);
+	// }
+	//
+	// printf("Did not detect Windows ISO!\n");
+	// printf("Proceeding with simple File System Transposition\n");
+	//
+	// printf("Formatting USB drive\n");
+	// int error = lock_drive(drive);
+	// if (error) {
+	// 	printf("Error: %d\n", error);
+	// 	return error;
+	// }
+	//
+	// prepare_fst_drive(drive);
+	//
+	//
+	// printf("Mounting Device\n");
+	// if ((error = mount_device(drive))){
+	// 	return error;
+	// }
+	//
+	// printf("Copying ISO files\n");
+	// copy_ISO_files();
+	//
+	// printf("Unmounting All");
+	// unmount_ALL();
+	//
+	// printf("Done\n");
 
 	return 0;
 }

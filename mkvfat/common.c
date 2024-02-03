@@ -43,7 +43,6 @@
 int interactive;
 int write_immed;
 int atari_format;
-const char *program_name;
 
 
 typedef struct _link {
