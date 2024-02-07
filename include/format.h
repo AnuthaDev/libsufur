@@ -9,6 +9,8 @@ int format_vfat(const char* part_node);
 
 int format_ntfs(const char* part_node);
 
+int format_exfat(const char* part_node);
+
 int format_ext2(const char* part_node);
 
 int format_ext3(const char* part_node);

@@ -17,9 +17,10 @@ mkntfs_sources = ['mkntfs/attrdef.c', 'mkntfs/boot.c', 'mkntfs/mkntfs.c', 'mkntf
 blkdev_sources = ['mkvfat/blkdev/blkdev.c', 'mkvfat/blkdev/linux_version.c']
 mkvfat_sources = ['mkvfat/charconv.c', 'mkvfat/common.c', 'mkvfat/device_info.c', 'mkvfat/mkfs.fat.c']
 mke2fs_sources = ['mke2fs/mke2fs.c']
+mkexfat_sources = ['mkexfat/mkexfat.c', 'mkexfat/libexfat.c', 'mkexfat/exfat_dir.c', 'mkexfat/exfat_fs.c', 'mkexfat/upcase.c']
 
 sources = ['libsufur.c', 'regcreate.c', 'wtg.c', 'partition.c', 'format.c', 'utils.c']
-sources += mkntfs_sources + blkdev_sources + mkvfat_sources + mke2fs_sources
+sources += mkntfs_sources + blkdev_sources + mkvfat_sources + mke2fs_sources + mkexfat_sources
 
 
 libsufur = shared_library('sufur', sources, dependencies : libraries, include_directories : headers)
