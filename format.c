@@ -33,3 +33,7 @@ int format_ext2(const char* part_node) {
 int format_ext3(const char* part_node) {
     return mke2fs(part_node, 3);
 }
+
+int format_ext4(const char* part_node) {
+    return mke2fs(part_node, 4);
+}

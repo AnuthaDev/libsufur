@@ -7,8 +7,9 @@ libhivex = dependency('hivex')
 wimlib = dependency('wimlib')
 libntfs = dependency('libntfs-3g')
 libext2fs = dependency('ext2fs')
+libuuid = dependency('uuid')
 
-libraries = [libfdisk, libmount, libudev, libhivex, wimlib, libntfs, libext2fs]
+libraries = [libfdisk, libmount, libudev, libhivex, wimlib, libntfs, libext2fs, libuuid]
 
 #TODO: Use meson subdir for mkvfat and mkntfs
 headers = include_directories('include', 'mkvfat/blkdev')
