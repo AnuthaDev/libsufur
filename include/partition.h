@@ -11,10 +11,10 @@
 
 int create_gpt_label(struct fdisk_context* cxt);
 
-int create_fst_partition(struct fdisk_context* cxt);
+int partition_fst_create(struct fdisk_context* cxt);
 
-int create_dual_fst_partitions(struct fdisk_context* cxt);
+int partition_fst_ntfs_create(struct fdisk_context* cxt);
 
-int create_windows_to_go_partitions(struct fdisk_context* cxt, unsigned char uuidarray[3][16]);
+int partition_w2go_create(struct fdisk_context* cxt, unsigned char uuidarray[3][16]);
 
 #endif //PARTITION_H

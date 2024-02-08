@@ -3,7 +3,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "wtg.h"
+#include "w2go.h"
+
 #define EMSSETTINGS "{0ce4991b-e6b3-4b16-b23c-5e0d9250e5d9}"
 #define RESUMELDRSETTINGS "{1afa9c49-16ab-4a5c-901b-212802da9460}"
 #define DBGSETTINGS "{4636856e-540f-4170-a130-a84776f4c654}"

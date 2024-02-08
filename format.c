@@ -8,7 +8,6 @@
 #include "mkexfat.h"
 
 int format_vfat(const char* part_node) {
-
     const char *argv[] = {"mkfs.fat", "-F", "32", part_node, (char*)0};
     const int argc = 4;
     return mkvfat(argc, argv);

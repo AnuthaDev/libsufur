@@ -16,7 +16,7 @@
 #include <libmount/libmount.h>
 #include <sys/stat.h>
 #include "utils.h"
-#include "wtg.h"
+#include "w2go.h"
 #include "partition.h"
 #include "format.h"
 // #include "strutils.h"
@@ -171,7 +171,7 @@ static int prepare_fst_drive(const usb_drive* drive) {
 	fdisk_delete_all_partitions(cxt);
 
 	create_gpt_label(cxt);
-	create_fst_partition(cxt);
+	partition_fst_create(cxt);
 
 
 	struct fdisk_table* tb = fdisk_new_table();
@@ -204,7 +204,7 @@ static int prepare_dual_fst_drive(const usb_drive* drive) {
 	fdisk_delete_all_partitions(cxt);
 
 	create_gpt_label(cxt);
-	create_dual_fst_partitions(cxt);
+	partition_fst_ntfs_create(cxt);
 
 	struct fdisk_table* tb = fdisk_new_table();
 	error = fdisk_get_partitions(cxt, &tb);
@@ -235,52 +235,6 @@ static int prepare_dual_fst_drive(const usb_drive* drive) {
 	// TODO: These strings may become invalid if we free structs above, make them robust
 	format_ntfs(ntfs_part_node);
 	format_vfat(vfat_part_node);
-
-
-	return error;
-}
-
-static int prepare_windows_to_go_drive(const usb_drive* drive, unsigned char uuidarray[3][16]) {
-	struct fdisk_context* cxt = NULL;
-	int error = utils_get_fdisk_context(drive, &cxt, 0);
-	if (error) {
-		return error;
-	}
-
-	fdisk_delete_all_partitions(cxt);
-
-	create_gpt_label(cxt);
-	create_windows_to_go_partitions(cxt, uuidarray);
-
-	struct fdisk_table* tb = fdisk_new_table();
-	error = fdisk_get_partitions(cxt, &tb);
-
-	if (error) {
-		printf("Failed to get device partition data\n");
-		return error;
-	}
-
-	struct fdisk_partition* esp_pt = fdisk_table_get_partition_by_partno(tb, 0);
-	char* esp_part_node = NULL;
-	error = fdisk_partition_to_string(esp_pt, cxt, FDISK_FIELD_DEVICE, &esp_part_node);
-	if (error) {
-		printf("Error getting ESP partition device\n");
-		return error;
-	}
-	printf("\nESP Device: %s\n", esp_part_node);
-
-
-	struct fdisk_partition* ntfs_pt = fdisk_table_get_partition_by_partno(tb, 1);
-	char* ntfs_part_node = NULL;
-	error = fdisk_partition_to_string(ntfs_pt, cxt, FDISK_FIELD_DEVICE, &ntfs_part_node);
-	printf("\nNTFS Device: %s\n", ntfs_part_node);
-
-	// This must come before format call, otherwise fdisk conflicts with mkfs
-	fdisk_deassign_device(cxt, 0);
-
-	// TODO: This strings may become invalid if we free structs above, make them robust
-	format_vfat(esp_part_node);
-	format_ntfs(ntfs_part_node);
 
 
 	return error;
@@ -385,78 +339,12 @@ static int flash_uefi_ntfs_img(const usb_drive* drive) {
 	return 0;
 }
 
-static int unmount_ALL() {
-	struct libmnt_context* mntcxt = mnt_new_context();
-
-	mnt_context_set_target(mntcxt, ISO_MNT_PATH);
-	int error = mnt_context_umount(mntcxt);
-	if (error) {
-		printf("Error while unmounting ISO. Continuing\n");
-	}
-	mnt_reset_context(mntcxt);
-
-
-	mnt_context_set_target(mntcxt, USB_MNT_PATH);
-	error = mnt_context_umount(mntcxt);
-	if (error) {
-		printf("Error while unmounting USB. Continuing\n");
-	}
-	mnt_free_context(mntcxt);
-
-	return 0;
-}
-
-static int lock_drive(const usb_drive* drive) {
-	struct fdisk_context* cxt = NULL;
-	int error = utils_get_fdisk_context(drive, &cxt, 1);
-
-	if (error) {
-		return error;
-	}
-
-	struct fdisk_table* tb = fdisk_new_table();
-	error = fdisk_get_partitions(cxt, &tb);
-
-	if (error) {
-		printf("Error while reading partition table\n");
-		return error;
-	}
-
-	const int nums = fdisk_table_get_nents(tb);
-	for (int i = 0; i < nums; i++) {
-		struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, i);
-		char* part_node = NULL;
-		fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
-		struct libmnt_context* mntcxt = mnt_new_context();
-
-		mnt_context_set_target(mntcxt, part_node);
-
-		printf("Device: %s\n", part_node);
-
-		error = mnt_context_umount(mntcxt);
-		if (error) {
-			printf("Error while unmounting partitions. Aborting!\n");
-			fdisk_deassign_device(cxt, 1);
-			return error;
-		}
-
-		// This needs investigation
-		// int statuserr = mnt_context_get_status(mntcxt);
-		// printf("Status: %d\n", statuserr);
-
-		mnt_free_context(mntcxt);
-	}
-
-	fdisk_deassign_device(cxt, 1);
-	return 0;
-}
-
 int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
 
 
 	printf("Unmounting Drive partitions\n");
-	int error = lock_drive(drive);
+	int error = unmount_all_partitions(drive);
 	if (error) {
 		printf("Error: %d\n", error);
 		return error;
@@ -472,7 +360,7 @@ int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 	copy_ISO_files();
 
 	printf("Unmounting All");
-	unmount_ALL();
+	unmount_sufur();
 
 	printf("Flashing UEFI:NTFS");
 	flash_uefi_ntfs_img(drive);
@@ -481,98 +369,6 @@ int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 	return 0;
 }
 
-
-int make_windows_to_go(const usb_drive* drive, const char* isopath) {
-	setbuf(stdout, NULL);
-
-	printf("Formatting USB drive\n");
-
-	int error = lock_drive(drive);
-	if (error) {
-		printf("Error: %d\n", error);
-		return error;
-	}
-	unsigned char uuidarray[3][16] = {0};
-	prepare_windows_to_go_drive(drive, uuidarray);
-
-	wimapply_w2go(drive);
-
-
-	struct fdisk_context* cxt = NULL;
-	error = utils_get_fdisk_context(drive, &cxt, 1);
-	if (error) {
-		return error;
-	}
-
-	struct fdisk_table* tb = fdisk_new_table();
-	error = fdisk_get_partitions(cxt, &tb);
-
-	if (error) {
-		printf("Failed to get device partition data\n");
-		return error;
-	}
-
-	struct fdisk_partition* ntfs_pt = fdisk_table_get_partition_by_partno(tb, 1);
-	char* ntfs_part_node = NULL;
-	error = fdisk_partition_to_string(ntfs_pt, cxt, FDISK_FIELD_DEVICE, &ntfs_part_node);
-	if (error) {
-		printf("Error getting ntfs partition device\n");
-		return error;
-	}
-
-	printf("\nMounting Partion: %s\n", ntfs_part_node);
-	mount_partition(ntfs_part_node, WTG_NTFS_MNT_PATH);
-
-
-	struct fdisk_partition* esp_pt = fdisk_table_get_partition_by_partno(tb, 0);
-	char* esp_part_node = NULL;
-	error = fdisk_partition_to_string(esp_pt, cxt, FDISK_FIELD_DEVICE, &esp_part_node);
-	if (error) {
-		printf("Error getting esp partition device\n");
-		return error;
-	}
-
-	printf("\nMounting Partion: %s\n", esp_part_node);
-	mount_partition(esp_part_node, WTG_ESP_MNT_PATH);
-
-	fdisk_deassign_device(cxt, 1);
-
-
-	mkdir(WTG_ESP_MNT_PATH "/EFI", 0700);
-	mkdir(WTG_ESP_MNT_PATH "/EFI/Boot", 0700);
-
-	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft", 0700);
-	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot", 0700);
-	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/Resources", 0700);
-	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/Fonts", 0700);
-	mkdir(WTG_ESP_MNT_PATH "/EFI/Microsoft/Recovery", 0700);
-
-	// WARNING: Don't leave a trailing slash at end of path, it will cause wrong filename
-	copy_dir_contents(WTG_NTFS_MNT_PATH "/Windows/Boot/EFI", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot");
-	copy_dir_contents(WTG_NTFS_MNT_PATH "/Windows/Boot/Resources", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/Resources");
-	copy_dir_contents(WTG_NTFS_MNT_PATH "/Windows/Boot/Fonts", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/Fonts");
-
-	copy_file(WTG_NTFS_MNT_PATH "/Windows/Boot/EFI/bootmgfw.efi", WTG_ESP_MNT_PATH "/EFI/Boot/bootx64.efi");
-	copy_file(WTG_NTFS_MNT_PATH "/Windows/System32/config/BCD-Template", WTG_ESP_MNT_PATH "/EFI/Microsoft/Boot/BCD");
-
-	createBootBCD(WTG_ESP_MNT_PATH"/EFI/Microsoft/Boot/BCD", uuidarray[0], uuidarray[1], uuidarray[2]);
-
-	// mount partition index 1
-	// mount partition index 0, copy esp files + bcd from partidx1 to partidx0
-	// apply SanPolicy to partidx1
-	// copy sysprep unattend.xml
-	// unmount all
-	//printf("Mounting Device\n");
-	//mount_device(drive);
-
-
-	printf("Unmounting All\n");
-	unmount_ALL();
-
-	printf("Done\n");
-
-	return 0;
-}
 
 int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	setbuf(stdout, NULL);
@@ -603,7 +399,7 @@ int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	printf("Proceeding with simple File System Transposition\n");
 
 	printf("Formatting USB drive\n");
-	int error = lock_drive(drive);
+	int error = unmount_all_partitions(drive);
 	if (error) {
 		printf("Error: %d\n", error);
 		return error;
@@ -621,7 +417,7 @@ int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
 	copy_ISO_files();
 
 	printf("Unmounting All");
-	unmount_ALL();
+	unmount_sufur();
 
 	printf("Done\n");
 

@@ -244,3 +244,70 @@ int utils_get_fdisk_context(const usb_drive* drive, struct fdisk_context** cxt, 
 
 	return 0;
 }
+
+
+int unmount_sufur() {
+	struct libmnt_context* mntcxt = mnt_new_context();
+
+	mnt_context_set_target(mntcxt, ISO_MNT_PATH);
+	int error = mnt_context_umount(mntcxt);
+	if (error) {
+		printf("Error while unmounting ISO. Continuing\n");
+	}
+	mnt_reset_context(mntcxt);
+
+
+	mnt_context_set_target(mntcxt, USB_MNT_PATH);
+	error = mnt_context_umount(mntcxt);
+	if (error) {
+		printf("Error while unmounting USB. Continuing\n");
+	}
+	mnt_free_context(mntcxt);
+
+	return 0;
+}
+
+int unmount_all_partitions(const usb_drive* drive) {
+	struct fdisk_context* cxt = NULL;
+	int error = utils_get_fdisk_context(drive, &cxt, 1);
+
+	if (error) {
+		return error;
+	}
+
+	struct fdisk_table* tb = fdisk_new_table();
+	error = fdisk_get_partitions(cxt, &tb);
+
+	if (error) {
+		printf("Error while reading partition table\n");
+		return error;
+	}
+
+	const int nums = fdisk_table_get_nents(tb);
+	for (int i = 0; i < nums; i++) {
+		struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, i);
+		char* part_node = NULL;
+		fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+		struct libmnt_context* mntcxt = mnt_new_context();
+
+		mnt_context_set_target(mntcxt, part_node);
+
+		printf("Device: %s\n", part_node);
+
+		error = mnt_context_umount(mntcxt);
+		if (error) {
+			printf("Error while unmounting partitions. Aborting!\n");
+			fdisk_deassign_device(cxt, 1);
+			return error;
+		}
+
+		// This needs investigation
+		// int statuserr = mnt_context_get_status(mntcxt);
+		// printf("Status: %d\n", statuserr);
+
+		mnt_free_context(mntcxt);
+	}
+
+	fdisk_deassign_device(cxt, 1);
+	return 0;
+}

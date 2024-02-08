@@ -12,7 +12,7 @@ int createBootBCD(const char* path, unsigned char disk_bits[16], unsigned char e
 
 int createRecBCD(unsigned char disk_bits[16], unsigned char esp_part_bits[16]);
 
-int wimapply_w2go(const usb_drive* drive);
+int make_windows_to_go(const usb_drive* drive, const char* isopath);
 
 // int wtg_format_drive(const usb_drive* drive);
 #endif //WTG_H

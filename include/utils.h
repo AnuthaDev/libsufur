@@ -21,4 +21,7 @@ int copy_dir_contents(char* path, char* to);
 
 int utils_get_fdisk_context(const usb_drive* drive, struct fdisk_context** cxt, const int readonly);
 
+int unmount_sufur();
+
+int unmount_all_partitions(const usb_drive* drive);
 #endif //UTILS_H

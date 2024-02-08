@@ -12,7 +12,7 @@ int create_gpt_label(struct fdisk_context* cxt) {
 	return 0;
 }
 
-int create_fst_partition(struct fdisk_context* cxt) {
+int partition_fst_create(struct fdisk_context* cxt) {
 	struct fdisk_partition* part = fdisk_new_partition();
 	fdisk_partition_partno_follow_default(part, 1);
 	fdisk_partition_start_follow_default(part, 1);
@@ -40,7 +40,7 @@ int create_fst_partition(struct fdisk_context* cxt) {
 }
 
 
-int create_dual_fst_partitions(struct fdisk_context* cxt) {
+int partition_fst_ntfs_create(struct fdisk_context* cxt) {
 	int error = 0;
 
 	const struct fdisk_label* label = fdisk_get_label(cxt, NULL);
@@ -80,7 +80,7 @@ int create_dual_fst_partitions(struct fdisk_context* cxt) {
 	return error;
 }
 
-int create_windows_to_go_partitions(struct fdisk_context* cxt, unsigned char uuidarray[3][16]) {
+int partition_w2go_create(struct fdisk_context* cxt, unsigned char uuidarray[3][16]) {
 	int error = 0;
 
 	const int disk_idx = 0, esp_idx = 1, boot_idx = 2;
