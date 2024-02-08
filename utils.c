@@ -97,19 +97,24 @@ void uuid_swizzle(const char* uuid, unsigned char destarr[]) {
 	}
 }
 
-// This is a laughably naive jugaad, but it works for now
-// TODO: Fix this
-int isWindowsISO() {
-	const int error = faccessat(-1, ISO_MNT_PATH"/sources/install.wim", F_OK, AT_EACCESS);
 
+int mount_ISO(const char* isopath) {
+	mkdir(ISO_MNT_PATH, 0700);
+
+	struct libmnt_context* mntcxt = mnt_new_context();
+
+	mnt_context_set_source(mntcxt, isopath);
+	mnt_context_set_target(mntcxt, ISO_MNT_PATH);
+
+	const int error = mnt_context_mount(mntcxt);
 	if (error) {
-		printf("Not Windows ISO\n");
-		return 0;
+		printf("Error while mounting ISO. Aborting!\n");
+		return error;
 	}
 
-	return 1;
+	mnt_free_context(mntcxt);
+	return 0;
 }
-
 
 int mount_partition(const char* partition, const char* target) {
 	int error = 0;
@@ -210,7 +215,7 @@ int copy_dir_contents(char* path, char* to) {
 
 	copy_busy = 0;
 
-	return ret == 0;
+	return ret;
 }
 
 int utils_get_fdisk_context(const usb_drive* drive, struct fdisk_context** cxt, const int readonly) {
@@ -290,6 +295,19 @@ int unmount_all_partitions(const usb_drive* drive) {
 		fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
 		struct libmnt_context* mntcxt = mnt_new_context();
 
+		mnt_context_set_target(mntcxt, part_node);
+
+		struct libmnt_fs *ps;
+		const int not_mounted = mnt_context_find_umount_fs (mntcxt, part_node, &ps);
+		mnt_free_fs(ps);
+
+		if(not_mounted == 1) {
+			printf("%s not mounted\n", part_node);
+			mnt_free_context(mntcxt);
+			continue;
+		}
+
+		mnt_reset_context(mntcxt);
 		mnt_context_set_target(mntcxt, part_node);
 
 		printf("Device: %s\n", part_node);

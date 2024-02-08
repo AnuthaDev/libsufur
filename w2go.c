@@ -103,16 +103,24 @@ static int prepare_w2go_drive(const usb_drive* drive, unsigned char uuidarray[3]
 
 int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
+	int error = 0;
 
-	printf("Formatting USB drive\n");
-
-	int error = unmount_all_partitions(drive);
+	error = unmount_all_partitions(drive);
 	if (error) {
 		printf("Error: %d\n", error);
 		return error;
 	}
+
 	unsigned char uuidarray[3][16] = {0};
+	printf("Formatting USB drive\n");
 	prepare_w2go_drive(drive, uuidarray);
+
+	printf("Mounting ISO\n");
+	error = mount_ISO(isopath);
+	if(error) {
+		printf("Error while mounting ISO. Aborting!\n");
+		return error;
+	}
 
 	wimapply_w2go(drive);
 
@@ -139,7 +147,7 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 		return error;
 	}
 
-	printf("\nMounting Partion: %s\n", ntfs_part_node);
+	printf("Mounting Partion: %s\n", ntfs_part_node);
 	mount_partition(ntfs_part_node, WTG_NTFS_MNT_PATH);
 
 
@@ -151,7 +159,7 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 		return error;
 	}
 
-	printf("\nMounting Partion: %s\n", esp_part_node);
+	printf("Mounting Partition: %s\n", esp_part_node);
 	mount_partition(esp_part_node, WTG_ESP_MNT_PATH);
 
 	fdisk_deassign_device(cxt, 1);
@@ -179,8 +187,7 @@ int make_windows_to_go(const usb_drive* drive, const char* isopath) {
 
 	// Remaining:
 	// copy sysprep unattend.xml
-	// unmount all
-
+	//unmount_all_partitions(drive); add abortOnError
 
 
 	printf("Unmounting All\n");

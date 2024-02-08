@@ -11,7 +11,7 @@ int is_valid_ISO(const char* path);
 
 void uuid_swizzle(const char* uuid, unsigned char destarr[]);
 
-int isWindowsISO();
+int mount_ISO(const char* isopath);
 
 int mount_partition(const char* partition, const char* target);
 

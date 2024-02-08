@@ -12,10 +12,16 @@ int main() {
 		printf("%s\n", val[i].devnode);
 	}
 
-	//format_usb_drive(val);
-	//make_bootable(val, "/media/extradrive/Win10_22H2_English_x64v1.iso", 1);
+	iso_props props = {};
+	props.path = "/home/thakur/Downloads/debian-12.4.0-amd64-netinst.iso";
+	//props.path = "/media/extradrive/Win10_22H2_English_x64v1.iso";
+	if(get_iso_properties(&props)) {
+		printf("Error while getting props\n");
+		return -1;
+	}
 
-	make_bootable(val, "/home/thakur/Downloads/debian-12.4.0-amd64-netinst.iso" , 0);
+	//props.isWin2GO = 1;
+	make_bootable(val, &props);
 
 	return 0;
 }

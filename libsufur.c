@@ -184,14 +184,18 @@ static int prepare_fst_drive(const usb_drive* drive) {
 
 	struct fdisk_partition* pt = fdisk_table_get_partition_by_partno(tb, 0);
 	char* part_node = NULL;
-	error = fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
+	fdisk_partition_to_string(pt, cxt, FDISK_FIELD_DEVICE, &part_node);
 	printf("Formatting Device: %s\n", part_node);
 
 	fdisk_deassign_device(cxt, 0);
 
-	format_vfat(part_node);
+	error = format_vfat(part_node);
+	if(error) {
+		printf("Error while formatting drive\n");
+		return error;
+	}
 
-	return error;
+	return 0;
 }
 
 static int prepare_dual_fst_drive(const usb_drive* drive) {
@@ -241,24 +245,6 @@ static int prepare_dual_fst_drive(const usb_drive* drive) {
 }
 
 
-static int mount_ISO(const char* isopath) {
-	mkdir(ISO_MNT_PATH, 0700);
-
-	struct libmnt_context* mntcxt = mnt_new_context();
-
-	mnt_context_set_source(mntcxt, isopath);
-	mnt_context_set_target(mntcxt, ISO_MNT_PATH);
-
-	const int error = mnt_context_mount(mntcxt);
-	if (error) {
-		printf("Error while mounting ISO. Aborting!\n");
-		return error;
-	}
-
-	mnt_free_context(mntcxt);
-	return 0;
-}
-
 static int mount_device(const usb_drive* drive) {
 	struct fdisk_context* cxt = NULL;
 	int error = utils_get_fdisk_context(drive, &cxt, 1);
@@ -282,7 +268,7 @@ static int mount_device(const usb_drive* drive) {
 		printf("Error getting USB 0th partition device\n");
 		return error;
 	}
-	printf("\nMounting Partion: %s\n", part_node);
+	printf("\nMounting Partition: %s\n", part_node);
 
 	fdisk_deassign_device(cxt, 1);
 
@@ -305,8 +291,7 @@ static int mount_device(const usb_drive* drive) {
 }
 
 static int copy_ISO_files() {
-	copy_dir_contents(ISO_MNT_PATH, USB_MNT_PATH);
-	return 0;
+	return copy_dir_contents(ISO_MNT_PATH, USB_MNT_PATH);
 }
 
 static int flash_uefi_ntfs_img(const usb_drive* drive) {
@@ -332,19 +317,19 @@ static int flash_uefi_ntfs_img(const usb_drive* drive) {
 		printf("Error getting vfat partition device\n");
 		return error;
 	}
-	printf("\nFlashing Partion: %s\n", part_node);
+	printf("\nFlashing Partition: %s\n", part_node);
 
 	copy_file("uefi-ntfs.img", part_node);
 
 	return 0;
 }
 
-int make_windows_bootable(const usb_drive* drive, const char* isopath) {
+static int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 	setbuf(stdout, NULL);
-
+	int error = 0;
 
 	printf("Unmounting Drive partitions\n");
-	int error = unmount_all_partitions(drive);
+	error = unmount_all_partitions(drive);
 	if (error) {
 		printf("Error: %d\n", error);
 		return error;
@@ -352,6 +337,13 @@ int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 
 	printf("Formatting USB drive\n");
 	prepare_dual_fst_drive(drive);
+
+	printf("Mounting ISO\n");
+	error = mount_ISO(isopath);
+	if(error) {
+		printf("Error while mounting ISO. Aborting!\n");
+		return error;
+	}
 
 	printf("Mounting Device\n");
 	mount_device(drive);
@@ -370,56 +362,51 @@ int make_windows_bootable(const usb_drive* drive, const char* isopath) {
 }
 
 
-int make_bootable(const usb_drive* drive, const char* isopath, int isWin2GO) {
+int make_bootable(const usb_drive* drive, const iso_props* props) {
 	setbuf(stdout, NULL);
+	int error = 0;
+	const char* isopath = props->path;
 
 	if (!is_valid_ISO(isopath)) {
 		printf("Invalid ISO file\n");
 		return -1;
 	}
 
-	printf("Mounting ISO\n");
-	// TODO: Handle error in mount
-	mount_ISO(isopath);
-
-	printf("Checking if it is Windows ISO\n");
-
-	const int isWin = isWindowsISO();
-
-
-	if ((isWin) && isWin2GO) {
+	if (props->isWindowsISO && props->isWin2GO) {
 		printf("Making Windows to Go drive\n");
 		return make_windows_to_go(drive, isopath);
-	} else if (isWin) {
+	}
+	if (props->isWindowsISO) {
 		printf("Detected Windows ISO! Will use UEFI:NTFS\n");
 		return make_windows_bootable(drive, isopath);
 	}
 
+
 	printf("Did not detect Windows ISO!\n");
 	printf("Proceeding with simple File System Transposition\n");
 
+	error = unmount_all_partitions(drive);
+	if (error) goto Exit;
+
 	printf("Formatting USB drive\n");
-	int error = unmount_all_partitions(drive);
-	if (error) {
-		printf("Error: %d\n", error);
-		return error;
-	}
+	error = prepare_fst_drive(drive);
+	if (error) goto Exit;
 
-	prepare_fst_drive(drive);
+	printf("Mounting ISO\n");
+	error = mount_ISO(isopath);
+	if (error) goto Exit;
 
-
-	printf("Mounting Device\n");
-	if ((error = mount_device(drive))){
-		return error;
-	}
+	printf("Mounting Drive\n");
+	error = mount_device(drive);
+	if (error) goto Exit;
 
 	printf("Copying ISO files\n");
 	copy_ISO_files();
 
-	printf("Unmounting All");
+Exit:
+	printf("Unmounting and exiting\n");
 	unmount_sufur();
-
 	printf("Done\n");
 
-	return 0;
+	return error;
 }

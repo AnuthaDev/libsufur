@@ -15,9 +15,16 @@ typedef struct usb_drive {
 	char* model_name;
 } usb_drive;
 
+typedef struct iso_props {
+	char* path;
+	int isWindowsISO;
+	int isWin2GO;
+} iso_props;
+
 int enumerate_usb_mass_storage(usb_drive**);
 
+int get_iso_properties(iso_props *props);
 
-int make_bootable(const usb_drive*, const char*, int isWin2GO);
+int make_bootable(const usb_drive*, const iso_props* props);
 
 #endif //LIBSUFUR_H
