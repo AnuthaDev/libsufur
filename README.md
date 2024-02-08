@@ -2,10 +2,12 @@
 Used by https://github.com/AnuthaDev/sufur
 
 ## Compilation
-Requires `libfdisk` and `libudev`
+Requires `libfdisk`, `libmount`, `libudev`, `libhivex`, `wimlib`, `libntfs-3g`, `libext2fs`, `libuuid`
 
+init the git submodule
 Setup the buildDir and compile.
 You should get a sufur_test executable and libsufur.so library.
+Copy the uefi-ntfs.img file from submodule dir to build dir
 
 ## Additional Information
 
