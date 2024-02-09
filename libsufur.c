@@ -15,10 +15,12 @@
 #include <string.h>
 #include <libmount/libmount.h>
 #include <sys/stat.h>
+
 #include "utils.h"
 #include "w2go.h"
 #include "partition.h"
 #include "format.h"
+#include "log.h"
 // #include "strutils.h"
 
 
@@ -382,8 +384,8 @@ int make_bootable(const usb_drive* drive, const iso_props* props) {
 	}
 
 
-	printf("Did not detect Windows ISO!\n");
-	printf("Proceeding with simple File System Transposition\n");
+	log_i("Did not detect Windows ISO!\n");
+	log_i("Proceeding with simple File System Transposition\n");
 
 	error = unmount_all_partitions(drive);
 	if (error) goto Exit;

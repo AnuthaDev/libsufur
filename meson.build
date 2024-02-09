@@ -20,7 +20,7 @@ mkvfat_sources = ['mkvfat/charconv.c', 'mkvfat/common.c', 'mkvfat/device_info.c'
 mke2fs_sources = ['mke2fs/mke2fs.c']
 mkexfat_sources = ['mkexfat/mkexfat.c', 'mkexfat/libexfat.c', 'mkexfat/exfat_dir.c', 'mkexfat/exfat_fs.c', 'mkexfat/upcase.c']
 
-sources = ['libsufur.c', 'regcreate.c', 'w2go.c', 'partition.c', 'format.c', 'utils.c', 'iso.c']
+sources = ['libsufur.c', 'regcreate.c', 'w2go.c', 'partition.c', 'format.c', 'utils.c', 'iso.c', 'log.c']
 sources += mkntfs_sources + blkdev_sources + mkvfat_sources + mke2fs_sources + mkexfat_sources
 
 
