@@ -20,12 +20,14 @@
 //!
 //! See `SUFUR_ARCHITECTURE.md` § "Phase 5 — macOS" for design context.
 
-use std::ffi::CStr;
+use std::ffi::{c_void, CStr};
 
-use objc2_core_foundation::{CFNumber, CFString};
+use objc2_core_foundation::{CFNumber, CFString, CFUUIDBytes, CFUUID};
 use objc2_io_kit::{
-    io_registry_entry_t, kIOReturnSuccess, kIOServicePlane, IOObjectConformsTo, IOObjectRelease,
-    IORegistryEntryCreateCFProperty, IORegistryEntryGetParentEntry,
+    io_registry_entry_t, kIOReturnSuccess, kIOServicePlane, IOCFPlugInInterface,
+    IOCreatePlugInInterfaceForService, IODestroyPlugInInterface, IOObjectConformsTo,
+    IOObjectRelease, IORegistryEntryCreateCFProperty, IORegistryEntryGetParentEntry, IOReturn,
+    IOUSBDevRequest, IOUSBDeviceInterface,
 };
 
 // ──────────────────────────────────────────────────────────────────────
@@ -205,76 +207,183 @@ fn registry_usb_info(entry: io_registry_entry_t) -> Option<UsbInfo> {
 ///
 /// # Implementation notes
 ///
-/// This function uses `IOCreatePlugInInterfaceForService` to create a
-/// plugin, then `QueryInterface` to obtain the `IOUSBDeviceInterface`
-/// vtable.  The vtable's `USBGetManufacturerStringIndex`,
-/// `USBGetProductStringIndex`, `USBGetSerialNumberStringIndex`, and
-/// `DeviceRequest` fields are called through the COM-style `(*ptr)->method`
-/// pattern.
+/// Uses `IOCreatePlugInInterfaceForService` to create a plugin, then
+/// `QueryInterface` to obtain the `IOUSBDeviceInterface` vtable.  The
+/// vtable's `USBGetManufacturerStringIndex`, `USBGetProductStringIndex`,
+/// `USBGetSerialNumberStringIndex`, and `DeviceRequest` fields are called
+/// through the COM-style `(*ptr)->method` pattern.
 ///
-/// The required UUID constants (`kIOUSBDeviceUserClientTypeID`,
-/// `kIOCFPlugInInterfaceID`, `kIOUSBDeviceInterfaceID`) are defined in
-/// `IOUSBLib.h`.  In `objc2-io-kit` they may be available directly as
-/// statics, or may need to be constructed from UUID bytes via
-/// `CFUUIDCreateFromUUIDBytes`.
-///
-/// **VERIFY on macOS:** Check whether `objc2_io_kit` exports
-/// `kIOUSBDeviceUserClientTypeID`, `kIOCFPlugInInterfaceID`, and
-/// `kIOUSBDeviceInterfaceID` (or `kIOUSBDeviceInterfaceID942`).  If not,
-/// construct them from their UUID string representations using
-/// `CFUUIDCreateFromString` or define the `CFUUIDBytes` structs manually.
-fn descriptor_usb_info(_entry: io_registry_entry_t) -> Option<UsbInfo> {
-    // TODO: Implement IOUSBDeviceInterface descriptor extraction.
-    //
-    // The structure is:
-    //
-    // 1. Find the IOUSBDevice ancestor (reuse find_usb_ancestor above).
-    // 2. let plugin = IOCreatePlugInInterfaceForService(
-    //        usb_service,
-    //        kIOUSBDeviceUserClientTypeID,  // CFUUID
-    //        kIOCFPlugInInterfaceID,        // CFUUID
-    //        &mut plug_in_interface,        // *mut *mut *mut IOCFPlugInInterfaceStruct
-    //        &mut score,                    // *mut i32
-    //    );
-    //
-    // 3. let dev = (*plug_in_interface).QueryInterface.expect(...)(
-    //        plug_in_interface,
-    //        CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID),
-    //        &mut dev_interface,  // *mut *mut IOUSBDeviceInterface
-    //    );
-    //    (*plug_in_interface).Release.expect(...)(plug_in_interface);
-    //
-    // 4. let mut vendor_id: u16 = 0;
-    //    (*dev_interface).GetDeviceVendor.expect(...)(dev_interface, &mut vendor_id);
-    //
-    // 5. let mut string_index: u8 = 0;
-    //    (*dev_interface).USBGetManufacturerStringIndex.expect(...)(
-    //        dev_interface, &mut string_index,
-    //    );
-    //    let manufacturer = get_string_descriptor(dev_interface, string_index);
-    //
-    // 6. Similarly for USBGetProductStringIndex and USBGetSerialNumberStringIndex.
-    //
-    // 7. (*dev_interface).Release.expect(...)(dev_interface);
-    //
-    // The `get_string_descriptor` helper issues a control transfer:
-    //
-    //   let mut request = IOUSBDevRequest {
-    //       bmRequestType: 0x80,  // kUSBIn | kUSBStandard | kUSBDevice
-    //       bRequest: 0x06,      // kUSBRqGetDescriptor
-    //       wValue: (0x03 << 8) | string_index,  // kUSBStringDesc << 8 | idx
-    //       wIndex: 0x0409,      // Language ID (English US)
-    //       wLength: 4086,
-    //       pData: buffer.as_mut_ptr() as *mut c_void,
-    //       wLenDone: 0,
-    //   };
-    //   (*dev_interface).DeviceRequest.expect(...)(dev_interface, &mut request);
-    //
-    //   // Parse: byte 0 = total length, byte 1 = descriptor type (0x03 = string),
-    //   // bytes 2+ = UTF-16LE string data.
-    //   // Convert with CFStringCreateWithBytes(kCFStringEncodingUTF16LE).
+/// The UUID constants (`kIOUSBDeviceUserClientTypeID`,
+/// `kIOCFPlugInInterfaceID`, `kIOUSBDeviceInterfaceID`) are not exported
+/// by `objc2-io-kit` (skipped in translation-config.toml), so we define
+/// them manually from the byte values in the system headers
+/// (`IOUSBLib.h`, `IOCFPlugIn.h`) using `CFUUID::constant_uuid_with_bytes`.
+fn descriptor_usb_info(entry: io_registry_entry_t) -> Option<UsbInfo> {
+    // 1. Find the IOUSBDevice/IOUSBHostDevice ancestor.
+    let usb_service = find_usb_ancestor(entry)?;
 
-    None
+    // 2. Create CFUUID constants for the COM interface types.
+    //    kIOUSBDeviceUserClientTypeID — from IOUSBLib.h
+    let plugin_type = CFUUID::constant_uuid_with_bytes(
+        None, 0x9d, 0xc7, 0xb7, 0x80, 0x9e, 0xc0, 0x11, 0xD4, 0xa5, 0x4f, 0x00, 0x0a, 0x27, 0x05,
+        0x28, 0x61,
+    )?;
+    //    kIOCFPlugInInterfaceID — from IOCFPlugIn.h
+    let interface_type = CFUUID::constant_uuid_with_bytes(
+        None, 0xC2, 0x44, 0xE8, 0x58, 0x10, 0x9C, 0x11, 0xD4, 0x91, 0xD4, 0x00, 0x50, 0xE4, 0xC6,
+        0x42, 0x6F,
+    )?;
+
+    // 3. Create the plugin interface.
+    let mut plug_in: *mut *mut IOCFPlugInInterface = std::ptr::null_mut();
+    let mut score: i32 = 0;
+    let kr = unsafe {
+        IOCreatePlugInInterfaceForService(
+            usb_service,
+            Some(&plugin_type),
+            Some(&interface_type),
+            &mut plug_in,
+            &mut score,
+        )
+    };
+    let _ = IOObjectRelease(usb_service);
+
+    if kr != kIOReturnSuccess || plug_in.is_null() {
+        return None;
+    }
+
+    // 4. QueryInterface for IOUSBDeviceInterface.
+    //    kIOUSBDeviceInterfaceID (= kIOUSBDeviceInterfaceID100) — from IOUSBLib.h
+    let device_iid = CFUUID::constant_uuid_with_bytes(
+        None, 0x5c, 0x81, 0x87, 0xd0, 0x9e, 0xf3, 0x11, 0xD4, 0x8b, 0x45, 0x00, 0x0a, 0x27, 0x05,
+        0x28, 0x61,
+    )?;
+    let device_iid_bytes: CFUUIDBytes = device_iid.uuid_bytes();
+
+    let mut dev: *mut c_void = std::ptr::null_mut();
+    let plug_vtable = unsafe { &**plug_in };
+    let query = plug_vtable.QueryInterface.expect("QueryInterface");
+    let hr = unsafe { query(plug_in as *mut c_void, device_iid_bytes, &mut dev) };
+
+    // Release the plugin — we have the device interface now.
+    let _ = unsafe { IODestroyPlugInInterface(plug_in) };
+
+    // HRESULT S_OK == 0
+    if hr != 0 || dev.is_null() {
+        return None;
+    }
+
+    let dev_interface = dev as *mut *mut IOUSBDeviceInterface;
+    let dev_vtable = unsafe { &**dev_interface };
+    let self_ptr = dev_interface as *mut c_void;
+
+    // 5. Get vendor/product IDs (no device open needed).
+    let mut vendor_id: u16 = 0;
+    let mut product_id: u16 = 0;
+    if let Some(f) = dev_vtable.GetDeviceVendor {
+        let _ = unsafe { f(self_ptr, &mut vendor_id) };
+    }
+    if let Some(f) = dev_vtable.GetDeviceProduct {
+        let _ = unsafe { f(self_ptr, &mut product_id) };
+    }
+
+    // 6. Get string descriptors via control transfers.
+    let manufacturer = get_usb_string(
+        dev_vtable,
+        self_ptr,
+        dev_vtable.USBGetManufacturerStringIndex,
+    );
+    let product = get_usb_string(dev_vtable, self_ptr, dev_vtable.USBGetProductStringIndex);
+    let serial = get_usb_string(
+        dev_vtable,
+        self_ptr,
+        dev_vtable.USBGetSerialNumberStringIndex,
+    );
+
+    // 7. Release the device interface.
+    if let Some(release) = dev_vtable.Release {
+        let _ = unsafe { release(self_ptr) };
+    }
+
+    Some(UsbInfo {
+        vendor_id: if vendor_id != 0 {
+            Some(vendor_id)
+        } else {
+            None
+        },
+        product_id: if product_id != 0 {
+            Some(product_id)
+        } else {
+            None
+        },
+        manufacturer,
+        product,
+        serial,
+    })
+}
+
+/// Look up a USB string descriptor by its string index.
+///
+/// Calls `get_index_fn` to obtain the string index, then issues a
+/// `DeviceRequest` control transfer to read the actual string data.
+fn get_usb_string(
+    vtable: &IOUSBDeviceInterface,
+    self_ptr: *mut c_void,
+    get_index_fn: Option<unsafe extern "C-unwind" fn(*mut c_void, *mut u8) -> IOReturn>,
+) -> Option<String> {
+    let get_index = get_index_fn?;
+    let mut idx: u8 = 0;
+    let ret = unsafe { get_index(self_ptr, &mut idx) };
+    if ret != kIOReturnSuccess || idx == 0 {
+        return None;
+    }
+    get_string_descriptor(vtable, self_ptr, idx)
+}
+
+/// Issue a USB control transfer to read a string descriptor.
+///
+/// The descriptor layout is:
+/// - byte 0: total length (including header)
+/// - byte 1: descriptor type (0x03 = string)
+/// - bytes 2+: UTF-16LE encoded string data
+///
+/// We convert the UTF-16LE data to a Rust `String` and trim whitespace.
+fn get_string_descriptor(
+    vtable: &IOUSBDeviceInterface,
+    self_ptr: *mut c_void,
+    idx: u8,
+) -> Option<String> {
+    let device_request = vtable.DeviceRequest?;
+
+    let mut buffer = [0u8; 4086];
+    let mut request = IOUSBDevRequest {
+        bmRequestType: 0x80,              // kUSBIn | kUSBStandard | kUSBDevice
+        bRequest: 0x06,                   // kUSBRqGetDescriptor
+        wValue: (0x03 << 8) | idx as u16, // kUSBStringDesc << 8 | idx
+        wIndex: 0x0409,                   // Language ID (English US)
+        wLength: buffer.len() as u16,
+        pData: buffer.as_mut_ptr() as *mut c_void,
+        wLenDone: 0,
+    };
+
+    let ret = unsafe { device_request(self_ptr, &mut request) };
+    if ret != kIOReturnSuccess || request.wLenDone <= 2 {
+        return None;
+    }
+
+    // Parse: skip first 2 bytes (length + type), rest is UTF-16LE.
+    let data_len = (request.wLenDone - 2) as usize;
+    let utf16: Vec<u16> = (0..data_len / 2)
+        .map(|i| u16::from_le_bytes([buffer[2 + i * 2], buffer[2 + i * 2 + 1]]))
+        .collect();
+
+    let s = String::from_utf16_lossy(&utf16);
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────

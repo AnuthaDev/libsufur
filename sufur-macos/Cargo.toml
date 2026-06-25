@@ -25,6 +25,8 @@ objc2-core-foundation = { version = "0.3.2", features = [
     "CFDictionary",
     "CFString",
     "CFNumber",
+    "CFUUID",
+    "CFPlugInCOM",
 ] }
 
 [dev-dependencies]
