@@ -13,6 +13,8 @@ serde.workspace = true
 serde_json.workspace = true
 
 # `for_current_platform()` selects the concrete platform impl for the host OS.
-# Only Linux is wired up in this scaffold.
 [target.'cfg(target_os = "linux")'.dependencies]
 sufur-linux = { path = "../sufur-linux" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+sufur-macos = { path = "../sufur-macos" }

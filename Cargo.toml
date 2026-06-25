@@ -4,6 +4,7 @@ members = [
     "sufur-core",
     "sufur-platform",
     "sufur-linux",
+    "sufur-macos",
     "sufur-cli",
 ]
 

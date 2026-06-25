@@ -1,0 +1,31 @@
+[package]
+name = "sufur-macos"
+description = "macOS platform implementation for Sufur (IOKit, diskutil)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sufur-platform = { path = "../sufur-platform" }
+thiserror.workspace = true
+futures.workspace = true
+
+# macOS-only IOKit / CoreFoundation bindings.
+# Target-gated so `cargo build` on Linux does not fetch them.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-io-kit = { version = "0.3.2", features = [
+    "libc",
+    "usb",
+    "USB",
+    "AppleUSBDefinitions",
+    "IOUSBLib",
+] }
+objc2-core-foundation = { version = "0.3.2", features = [
+    "CFDictionary",
+    "CFString",
+    "CFNumber",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true

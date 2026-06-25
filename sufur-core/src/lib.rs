@@ -37,14 +37,17 @@ impl Sufur {
     }
 
     /// Convenience constructor — selects the correct platform for the current
-    /// OS.  Only Linux is wired up in this scaffold; other targets return an
-    /// error.
+    /// OS.  Linux and macOS are wired up; other targets return an error.
     pub fn for_current_platform() -> Result<Self, Error> {
         #[cfg(target_os = "linux")]
         {
             Ok(Self::new(sufur_linux::LinuxPlatform))
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        {
+            Ok(Self::new(sufur_macos::MacosPlatform))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             Err(Error::platform(
                 ErrorCode::Internal,
