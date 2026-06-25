@@ -13,6 +13,19 @@ use gptman::GPT;
 
 use crate::{BlockDevice, Error, ErrorCode};
 
+/// Extract a human-readable detail string from a `gptman::Error`.
+///
+/// gptman's `Error::Io` Display is the unhelpful `"generic I/O error"` — it
+/// discards the inner `io::Error` that carries the actual OS message (e.g.
+/// `"Invalid argument (os error 22)"`).  This helper unwraps the inner error
+/// so callers see the real cause.
+fn gptman_detail(e: &gptman::Error) -> String {
+    match e {
+        gptman::Error::Io(io_err) => format!("{io_err}"),
+        other => format!("{other}"),
+    }
+}
+
 /// Adapts a [`BlockDevice`] (offset-based read/write) to `Read + Write + Seek`
 /// for use with `gptman`, which requires standard `std::io` traits.
 struct BlockDeviceIo<'a> {
@@ -101,13 +114,13 @@ pub fn wipe_and_create_gpt(dev: &mut dyn BlockDevice) -> Result<(), Error> {
     let disk_guid = *uuid::Uuid::new_v4().as_bytes();
 
     let mut gpt = GPT::new_from(&mut io, DEFAULT_SECTOR_SIZE, disk_guid)
-        .map_err(|e| Error::platform(ErrorCode::Internal, format!("GPT creation failed: {e}")))?;
+        .map_err(|e| Error::platform(ErrorCode::Internal, format!("GPT creation failed: {}", gptman_detail(&e))))?;
 
     GPT::write_protective_mbr_into(&mut io, DEFAULT_SECTOR_SIZE)
-        .map_err(|e| Error::platform(ErrorCode::Internal, format!("protective MBR failed: {e}")))?;
+        .map_err(|e| Error::platform(ErrorCode::Internal, format!("protective MBR failed: {}", gptman_detail(&e))))?;
 
     gpt.write_into(&mut io)
-        .map_err(|e| Error::platform(ErrorCode::Internal, format!("GPT write failed: {e}")))?;
+        .map_err(|e| Error::platform(ErrorCode::Internal, format!("GPT write failed: {}", gptman_detail(&e))))?;
 
     io.sync()?;
     Ok(())
@@ -128,10 +141,10 @@ pub fn create_gpt_with_partition(
     let disk_guid = *uuid::Uuid::new_v4().as_bytes();
 
     let mut gpt = GPT::new_from(&mut io, DEFAULT_SECTOR_SIZE, disk_guid)
-        .map_err(|e| Error::platform(ErrorCode::Internal, format!("GPT creation failed: {e}")))?;
+        .map_err(|e| Error::platform(ErrorCode::Internal, format!("GPT creation failed: {}", gptman_detail(&e))))?;
 
     GPT::write_protective_mbr_into(&mut io, DEFAULT_SECTOR_SIZE)
-        .map_err(|e| Error::platform(ErrorCode::Internal, format!("protective MBR failed: {e}")))?;
+        .map_err(|e| Error::platform(ErrorCode::Internal, format!("protective MBR failed: {}", gptman_detail(&e))))?;
 
     gpt[1] = gptman::GPTPartitionEntry {
         partition_type_guid,
@@ -143,7 +156,7 @@ pub fn create_gpt_with_partition(
     };
 
     gpt.write_into(&mut io)
-        .map_err(|e| Error::platform(ErrorCode::Internal, format!("GPT write failed: {e}")))?;
+        .map_err(|e| Error::platform(ErrorCode::Internal, format!("GPT write failed: {}", gptman_detail(&e))))?;
 
     io.sync()?;
     Ok(())

@@ -619,6 +619,7 @@ version = "0.1.0"
 dependencies = [
  "dispatch2",
  "futures",
+ "libc",
  "objc2-core-foundation",
  "objc2-disk-arbitration",
  "objc2-io-kit",
