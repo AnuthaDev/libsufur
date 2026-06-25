@@ -167,8 +167,34 @@ fn cmd_format(_device: &std::path::Path, _fs: &str, json: bool) -> Result<(), su
     not_implemented("format", json)
 }
 
-fn cmd_wipe(_device: &std::path::Path, json: bool) -> Result<(), sufur_core::Error> {
-    not_implemented("wipe", json)
+fn cmd_wipe(device: &std::path::Path, json: bool) -> Result<(), sufur_core::Error> {
+    let engine = engine()?;
+    let devices = engine.list_devices()?;
+    let target = devices.iter().find(|d| d.path == device).ok_or_else(|| {
+        sufur_core::Error::platform(
+            sufur_core::ErrorCode::DeviceNotFound,
+            format!("no removable device at {}", device.display()),
+        )
+    })?;
+
+    engine.wipe_device(&target.id)?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "type": "complete",
+                "device": device.display().to_string(),
+                "message": "partition table wiped, fresh GPT written"
+            })
+        );
+    } else {
+        eprintln!(
+            "Wiped partition table on {} — fresh GPT written.",
+            device.display()
+        );
+    }
+    Ok(())
 }
 
 fn cmd_validate(

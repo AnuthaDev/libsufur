@@ -14,6 +14,7 @@ pub use sufur_platform::{
 };
 
 pub mod image;
+pub mod partition;
 pub mod pipeline;
 pub mod progress;
 
@@ -70,5 +71,12 @@ impl Sufur {
     /// Enumerate removable devices via the platform.
     pub fn list_devices(&self) -> Result<Vec<Device>, Error> {
         self.platform.list_devices()
+    }
+
+    /// Wipe the partition table on the device identified by `id` and write a
+    /// fresh empty GPT with a protective MBR.
+    pub fn wipe_device(&self, id: &DeviceId) -> Result<(), Error> {
+        let mut dev = self.platform.open_device(id)?;
+        partition::wipe_and_create_gpt(dev.as_mut())
     }
 }

@@ -28,6 +28,10 @@ clap = { version = "4.5", features = ["derive", "color", "wrap_help"] }
 tempfile = "3"
 # libudev bindings (optional, feature-gated in sufur-linux)
 udev = "0.9"
+# GPT partition table manipulation
+gptman = { version = "3", default-features = false }
+# UUID generation for disk/partition GUIDs
+uuid = { version = "1", features = ["v4"] }
 
 [profile.release]
 lto = true

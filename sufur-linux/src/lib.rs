@@ -12,10 +12,13 @@
 
 #![cfg(target_os = "linux")]
 
+mod blockdev;
 mod sysfs;
 #[cfg(feature = "udev")]
 mod udev;
 
+use std::fs::OpenOptions;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use futures::stream::{self, BoxStream, StreamExt};
@@ -23,6 +26,8 @@ use sufur_platform::{
     BlockDevice, Device, DeviceEvent, DeviceId, Error, ErrorCode, Filesystem, FormatOptions,
     MountHandle, Partition, Platform,
 };
+
+use blockdev::LinuxBlockDevice;
 
 /// Linux implementation of [`Platform`].
 pub struct LinuxPlatform;
@@ -39,10 +44,34 @@ impl Platform for LinuxPlatform {
     }
 
     fn open_device(&self, id: &DeviceId) -> Result<Box<dyn BlockDevice>, Error> {
-        Err(Error::platform(
-            ErrorCode::DeviceNotFound,
-            format!("device not found: {}", id.0),
-        ))
+        let devices = self.list_devices()?;
+        let device = devices.iter().find(|d| &d.id == id).ok_or_else(|| {
+            Error::platform(
+                ErrorCode::DeviceNotFound,
+                format!("device not found: {}", id.0),
+            )
+        })?;
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_EXCL)
+            .open(&device.path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    Error::platform(
+                        ErrorCode::PermissionDenied,
+                        format!("cannot open {}: {}", device.path.display(), e),
+                    )
+                } else {
+                    Error::platform(
+                        ErrorCode::DeviceBusy,
+                        format!("cannot open {}: {}", device.path.display(), e),
+                    )
+                }
+            })?;
+
+        Ok(Box::new(LinuxBlockDevice::new(file, device.size_bytes)))
     }
 
     fn format_partition(

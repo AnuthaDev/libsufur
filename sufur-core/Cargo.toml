@@ -11,6 +11,8 @@ sufur-platform = { path = "../sufur-platform" }
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+gptman = { workspace = true }
+uuid = { workspace = true }
 
 # `for_current_platform()` selects the concrete platform impl for the host OS.
 [target.'cfg(target_os = "linux")'.dependencies]

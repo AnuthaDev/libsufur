@@ -1,5 +1,7 @@
+#[cfg(target_os = "macos")]
 use sufur_platform::Platform;
 
+#[cfg(target_os = "macos")]
 fn main() {
     let platform = sufur_macos::MacosPlatform;
     match platform.list_devices() {
@@ -23,4 +25,9 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!("this example only runs on macOS");
 }

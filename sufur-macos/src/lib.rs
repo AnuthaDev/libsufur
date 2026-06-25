@@ -25,9 +25,12 @@
 
 #![cfg(target_os = "macos")]
 
+mod blockdev;
+mod disk_arb;
 mod iokit;
 mod usb;
 
+use std::fs::OpenOptions;
 use std::path::Path;
 
 use futures::stream::{self, BoxStream, StreamExt};
@@ -35,6 +38,8 @@ use sufur_platform::{
     BlockDevice, Device, DeviceEvent, DeviceId, Error, ErrorCode, Filesystem, FormatOptions,
     MountHandle, Partition, Platform,
 };
+
+use blockdev::MacosBlockDevice;
 
 /// macOS implementation of [`Platform`].
 pub struct MacosPlatform;
@@ -45,10 +50,34 @@ impl Platform for MacosPlatform {
     }
 
     fn open_device(&self, id: &DeviceId) -> Result<Box<dyn BlockDevice>, Error> {
-        Err(Error::platform(
-            ErrorCode::DeviceNotFound,
-            format!("device not found: {}", id.0),
-        ))
+        let devices = iokit::enumerate()?;
+        let device = devices.iter().find(|d| &d.id == id).ok_or_else(|| {
+            Error::platform(
+                ErrorCode::DeviceNotFound,
+                format!("device not found: {}", id.0),
+            )
+        })?;
+
+        let disk_path = &device.path;
+        let raw_path = disk_path
+            .to_string_lossy()
+            .replace("/dev/disk", "/dev/rdisk");
+
+        let bsd_name = disk_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        disk_arb::unmount_disk(bsd_name)?;
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&raw_path)
+            .map_err(|e| {
+                Error::platform(
+                    ErrorCode::PermissionDenied,
+                    format!("cannot open {raw_path}: {e}"),
+                )
+            })?;
+
+        Ok(Box::new(MacosBlockDevice::new(file, device.size_bytes)))
     }
 
     fn format_partition(

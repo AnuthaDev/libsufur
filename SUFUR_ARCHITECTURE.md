@@ -690,7 +690,7 @@ Cancellation semantics remain owned by `sufur-core`.
 | Analyze ISO | User | Regular file read |
 | Watch hotplug events | User | udev subscription (Linux), IOKit notifications (macOS) |
 | Partition / format / write | Root | Linux: `sufur-helper` via polkit/pkexec; CLI and GUI both use the same helper |
-| macOS device write | Root + FDA | Full Disk Access required; `diskutil unmountDisk` before open |
+| macOS device write | Root + FDA | Full Disk Access required; DiskArbitration `DADisk::unmount` (kDADiskUnmountOptionWhole) before open |
 | Windows device write | Elevated token | UAC prompt via `ShellExecute("runas")`; progress via named pipe |
 
 ### CLI Privilege Model
@@ -814,7 +814,7 @@ cargo +nightly fuzz run analyze_wim
 - [x] `sufur-macos`: IOKit enumeration via `IOServiceMatching("IOMedia")` — direct framework calls, no `diskutil`/`ioreg`/`system_profiler` shell-out (see [macOS Device Enumeration](#macos-device-enumeration))
 - [x] `sufur-core::for_current_platform()` wired for `cfg(target_os = "macos")`
 - [x] Cross-compiles to empty rlib on non-macOS via `#![cfg(target_os = "macos")]`
-- [ ] Partition / format / mount (still pending — will require `diskutil` or vendored formatters)
+- [ ] Partition / format / mount (still pending — prefer direct framework APIs over `diskutil` shell-out, consistent with the DiskArbitration unmount implementation)
 - [x] `descriptor_usb_info` fallback via `IOUSBDeviceInterface` — control-transfer-based USB string descriptor extraction (see [USB Metadata Fallback](#usb-metadata-fallback))
 - [ ] Linux ISO creation tested on macOS
 - [ ] macOS limitations documented
@@ -844,7 +844,7 @@ cargo +nightly fuzz run analyze_wim
 | Qt privilege model | Decided | Privileged execution occurs in `sufur-helper`; GUI remains unprivileged |
 | config.h generation environment | Decided | Generated on Ubuntu 22.04 LTS (Linux) and macOS 14 Sonoma; must be regenerated on submodule bumps |
 | Job format versioning | Decided | `version: 1` field required; parser rejects unknown versions with a clear error |
-| macOS partition/format/mount | Pending | Phase 5 device enumeration done; write path still needs `diskutil` or vendored formatters + FDA check (see [macOS: TCC and Full Disk Access](#macos-tcc-and-full-disk-access)) |
+| macOS partition/format/mount | Pending | Phase 5 device enumeration done; DiskArbitration unmount implemented; format/mount still needs direct framework APIs or vendored formatters + FDA check (see [macOS: TCC and Full Disk Access](#macos-tcc-and-full-disk-access)) |
 | macOS USB descriptor fallback | Implemented | `descriptor_usb_info` (Approach B via `IOUSBDeviceInterface`) is implemented as a fallback to registry properties (Approach A); UUID constants defined manually via `CFUUID::constant_uuid_with_bytes` (see [USB Metadata Fallback](#usb-metadata-fallback)) |
 | macOS hotplug events | Not yet designed | `Platform::watch_devices()` on macOS needs `IOServiceAddMatchingNotification` run-loop integration |
 
@@ -861,7 +861,7 @@ The required approach for macOS:
 1. The app bundle must declare the `com.apple.security.device.usb` entitlement and request FDA via the `NSDesktopFolderUsageDescription` / `NSRemovableVolumesUsageDescription` keys in `Info.plist`
 2. On first launch, the app prompts the user to grant Full Disk Access in System Settings → Privacy & Security → Full Disk Access
 3. If FDA is not granted, all write operations must fail immediately with a clear error message and a deep link to the relevant System Settings pane: `x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`
-4. `diskutil unmountDisk /dev/diskN` must be called before opening the raw device, even with FDA
+4. DiskArbitration `DADisk::unmount` with `kDADiskUnmountOptionWhole` must be called before opening the raw device, even with FDA — implemented via `objc2-disk-arbitration` (no `diskutil` shell-out)
 
 This is mandatory from day one of macOS support (Phase 5+). The `PrivilegedPlatform` trait for macOS must check for FDA at startup and surface a typed `Error::PermissionDenied { reason: "Full Disk Access required", deep_link: "..." }` before attempting any device I/O.
 
