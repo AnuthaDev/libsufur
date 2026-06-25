@@ -6,17 +6,22 @@
 //! remain stubs pending Phase 2.  Hotplug monitoring (`watch_devices`) will
 //! use a udev monitor socket — listed as "not yet designed" in the
 //! architecture's open-decisions table.
+//! //! The entire crate compiles to an empty library on non-Linux targets via
+//! `#![cfg(target_os = "linux")]`, so the workspace builds on other platforms without
+//! the linux-only dependencies being fetched.
 
+#![cfg(target_os = "linux")]
+
+mod sysfs;
 #[cfg(feature = "udev")]
 mod udev;
-mod sysfs;
 
 use std::path::Path;
 
 use futures::stream::{self, BoxStream, StreamExt};
 use sufur_platform::{
-    BlockDevice, Device, DeviceEvent, DeviceId, Error, ErrorCode,
-    Filesystem, FormatOptions, MountHandle, Partition, Platform,
+    BlockDevice, Device, DeviceEvent, DeviceId, Error, ErrorCode, Filesystem, FormatOptions,
+    MountHandle, Partition, Platform,
 };
 
 /// Linux implementation of [`Platform`].
@@ -53,13 +58,10 @@ impl Platform for LinuxPlatform {
         ))
     }
 
-    fn mount(
-        &self,
-        _src: &Path,
-        tgt: &Path,
-        _fs: Option<&str>,
-    ) -> Result<MountHandle, Error> {
-        Ok(MountHandle { target: tgt.to_owned() })
+    fn mount(&self, _src: &Path, tgt: &Path, _fs: Option<&str>) -> Result<MountHandle, Error> {
+        Ok(MountHandle {
+            target: tgt.to_owned(),
+        })
     }
 
     fn watch_devices(&self) -> BoxStream<'static, DeviceEvent> {

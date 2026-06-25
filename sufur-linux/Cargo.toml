@@ -10,6 +10,8 @@ rust-version.workspace = true
 sufur-platform = { path = "../sufur-platform" }
 thiserror.workspace = true
 futures.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
 udev = { workspace = true, optional = true }
 
 [features]
