@@ -32,8 +32,8 @@ use std::path::Path;
 
 use futures::stream::{self, BoxStream, StreamExt};
 use sufur_platform::{
-    BlockDevice, Device, DeviceEvent, DeviceId, Error, ErrorCode, Filesystem,
-    FormatOptions, MountHandle, Partition, Platform,
+    BlockDevice, Device, DeviceEvent, DeviceId, Error, ErrorCode, Filesystem, FormatOptions,
+    MountHandle, Partition, Platform,
 };
 
 /// macOS implementation of [`Platform`].
@@ -64,12 +64,7 @@ impl Platform for MacosPlatform {
         ))
     }
 
-    fn mount(
-        &self,
-        _src: &Path,
-        tgt: &Path,
-        _fs: Option<&str>,
-    ) -> Result<MountHandle, Error> {
+    fn mount(&self, _src: &Path, tgt: &Path, _fs: Option<&str>) -> Result<MountHandle, Error> {
         Ok(MountHandle {
             target: tgt.to_owned(),
         })

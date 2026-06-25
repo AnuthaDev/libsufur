@@ -7,7 +7,7 @@
 
 use std::io::{Read, Seek, SeekFrom};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::Error;
 

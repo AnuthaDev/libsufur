@@ -4,7 +4,7 @@
 //! progress representation in the entire system (architecture § "Progress &
 //! Cancellation" and § "Privilege Model → Progress Transport").
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// A single progress event in the pipeline event stream.
 ///

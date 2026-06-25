@@ -16,7 +16,11 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "sufur", version, about = "Create bootable USB drives — CLI-first")]
+#[command(
+    name = "sufur",
+    version,
+    about = "Create bootable USB drives — CLI-first"
+)]
 struct Cli {
     /// Emit NDJSON on stdout instead of human-friendly TTY output.
     #[arg(long, global = true)]
@@ -62,13 +66,9 @@ enum Command {
     /// Report system tool availability.
     Capabilities,
     /// Apply a declarative job file.
-    ApplyJob {
-        job_file: PathBuf,
-    },
+    ApplyJob { job_file: PathBuf },
     /// Dry-run check of a job file without touching devices.
-    ValidateJob {
-        job_file: PathBuf,
-    },
+    ValidateJob { job_file: PathBuf },
 }
 
 fn main() {
@@ -93,7 +93,10 @@ fn main() {
                 "code": code_of(&e),
                 "message": e.to_string(),
             });
-            println!("{}", serde_json::to_string(&envelope).unwrap_or_else(|_| "{}".into()));
+            println!(
+                "{}",
+                serde_json::to_string(&envelope).unwrap_or_else(|_| "{}".into())
+            );
         } else {
             eprintln!("error: {e}");
         }
@@ -151,7 +154,11 @@ fn cmd_analyze_image(path: &std::path::Path, json: bool) -> Result<(), sufur_cor
     Ok(())
 }
 
-fn cmd_create(_image: &std::path::Path, _device: &std::path::Path, json: bool) -> Result<(), sufur_core::Error> {
+fn cmd_create(
+    _image: &std::path::Path,
+    _device: &std::path::Path,
+    json: bool,
+) -> Result<(), sufur_core::Error> {
     // Phase 3: construct job, launch sufur-helper via pkexec, stream NDJSON.
     not_implemented("create", json)
 }
@@ -164,7 +171,11 @@ fn cmd_wipe(_device: &std::path::Path, json: bool) -> Result<(), sufur_core::Err
     not_implemented("wipe", json)
 }
 
-fn cmd_validate(_image: &std::path::Path, _checksum: &str, _json: bool) -> Result<(), sufur_core::Error> {
+fn cmd_validate(
+    _image: &std::path::Path,
+    _checksum: &str,
+    _json: bool,
+) -> Result<(), sufur_core::Error> {
     // Phase 2: SHA-256 verify.
     Ok(())
 }
@@ -188,11 +199,12 @@ fn cmd_capabilities(json: bool) -> Result<(), sufur_core::Error> {
 
 fn cmd_apply_job(job_file: &std::path::Path, _json: bool) -> Result<(), sufur_core::Error> {
     let raw = std::fs::read_to_string(job_file)?;
-    let job: sufur_core::pipeline::CreateJob = serde_json::from_str(&raw)
-        .map_err(|e| sufur_core::Error::platform(
+    let job: sufur_core::pipeline::CreateJob = serde_json::from_str(&raw).map_err(|e| {
+        sufur_core::Error::platform(
             sufur_core::ErrorCode::Internal,
             format!("invalid job file: {e}"),
-        ))?;
+        )
+    })?;
     let mut handler = NdJsonHandler;
     sufur_core::pipeline::run_create(&job, std::path::Path::new("/dev/null"), &mut handler)?;
     Ok(())
@@ -200,11 +212,12 @@ fn cmd_apply_job(job_file: &std::path::Path, _json: bool) -> Result<(), sufur_co
 
 fn cmd_validate_job(job_file: &std::path::Path, _json: bool) -> Result<(), sufur_core::Error> {
     let raw = std::fs::read_to_string(job_file)?;
-    let job: sufur_core::pipeline::CreateJob = serde_json::from_str(&raw)
-        .map_err(|e| sufur_core::Error::platform(
+    let job: sufur_core::pipeline::CreateJob = serde_json::from_str(&raw).map_err(|e| {
+        sufur_core::Error::platform(
             sufur_core::ErrorCode::Internal,
             format!("invalid job file: {e}"),
-        ))?;
+        )
+    })?;
     sufur_core::pipeline::validate_job(&job)?;
     Ok(())
 }

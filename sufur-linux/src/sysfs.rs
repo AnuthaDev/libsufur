@@ -108,7 +108,14 @@ mod tests {
     #[test]
     fn enumerates_a_removable_device() {
         let tmp = tempfile::tempdir().unwrap();
-        make_device(tmp.path(), "sda", true, "7864320", "SanDisk", "Cruzer Blade");
+        make_device(
+            tmp.path(),
+            "sda",
+            true,
+            "7864320",
+            "SanDisk",
+            "Cruzer Blade",
+        );
         let devices = enumerate(&tmp.path().join("sys/block")).unwrap();
         assert_eq!(devices.len(), 1);
         let d = &devices[0];
@@ -166,7 +173,14 @@ mod tests {
     #[test]
     fn whitespace_in_attrs_is_trimmed() {
         let tmp = tempfile::tempdir().unwrap();
-        make_device(tmp.path(), "sda", true, "1000", "  SanDisk  \n", " Cruzer \n");
+        make_device(
+            tmp.path(),
+            "sda",
+            true,
+            "1000",
+            "  SanDisk  \n",
+            " Cruzer \n",
+        );
         let devices = enumerate(&tmp.path().join("sys/block")).unwrap();
         assert_eq!(devices[0].vendor, "SanDisk");
         assert_eq!(devices[0].model, "Cruzer");

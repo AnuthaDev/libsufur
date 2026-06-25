@@ -11,18 +11,15 @@
 
 use std::ffi::CStr;
 
-use objc2_core_foundation::{
-    CFBoolean, CFDictionary, CFNumber, CFRetained, CFString,
-};
+use objc2_core_foundation::{CFBoolean, CFDictionary, CFNumber, CFRetained, CFString};
 use objc2_io_kit::{
+    io_iterator_t, io_object_t, io_registry_entry_t, kIOReturnSuccess, kIOServicePlane,
     IOIteratorNext, IOObjectConformsTo, IOObjectRelease, IORegistryEntryCreateCFProperty,
     IORegistryEntryGetParentEntry, IOServiceGetMatchingServices, IOServiceMatching,
-    io_iterator_t, io_object_t, io_registry_entry_t, kIOReturnSuccess, kIOServicePlane,
 };
 
-use sufur_platform::{Device, DeviceId, Error, ErrorCode};
-
 use crate::usb;
+use sufur_platform::{Device, DeviceId, Error, ErrorCode};
 
 // ──────────────────────────────────────────────────────────────────────
 //  IOKit property keys (string constants from IOMedia.h, IOBSD.h, etc.)
@@ -153,17 +150,9 @@ fn vendor_and_model(media: io_registry_entry_t) -> (String, String) {
         }
 
         // Walk to parent
-        let mut parent: io_registry_entry_t = 0;
-        let kr = unsafe {
-            IORegistryEntryGetParentEntry(
-                current,
-                kIOServicePlane.as_ptr() as *mut _,
-                &mut parent,
-            )
-        };
-        if kr != kIOReturnSuccess || parent == 0 {
+        let Some(parent) = parent_entry(current) else {
             break;
-        }
+        };
         // Release intermediate parents (but never the original `media` —
         // it's owned by the caller's IoObject guard).
         if current != media {
@@ -180,10 +169,7 @@ fn vendor_and_model(media: io_registry_entry_t) -> (String, String) {
 }
 
 /// Read a CFDictionary property.
-fn read_dictionary(
-    entry: io_registry_entry_t,
-    key: &str,
-) -> Option<CFRetained<CFDictionary>> {
+fn read_dictionary(entry: io_registry_entry_t, key: &str) -> Option<CFRetained<CFDictionary>> {
     let cf_key = CFString::from_str(key);
     let prop = unsafe { IORegistryEntryCreateCFProperty(entry, Some(&cf_key), None, 0) }?;
     // Downcast the CFRetained<CFType> to CFRetained<CFDictionary>.
@@ -209,6 +195,19 @@ fn dict_string(dict: &CFDictionary, key: &str) -> String {
     }
 }
 
+/// Get the parent entry in the `IOService` plane.
+fn parent_entry(entry: io_registry_entry_t) -> Option<io_registry_entry_t> {
+    let mut parent: io_registry_entry_t = 0;
+    let kr = unsafe {
+        IORegistryEntryGetParentEntry(entry, kIOServicePlane.as_ptr() as *mut _, &mut parent)
+    };
+    if kr != kIOReturnSuccess || parent == 0 {
+        None
+    } else {
+        Some(parent)
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────
 //  Validation
 // ──────────────────────────────────────────────────────────────────────
@@ -217,19 +216,10 @@ fn dict_string(dict: &CFDictionary, key: &str) -> String {
 /// `IOBlockStorageDriver` — confirms this is a real block-storage-backed
 /// whole disk, not a virtual or synthetic IOMedia object.
 fn has_block_storage_parent(media: io_registry_entry_t) -> bool {
-    let mut parent: io_registry_entry_t = 0;
-    let kr = unsafe {
-        IORegistryEntryGetParentEntry(
-            media,
-            kIOServicePlane.as_ptr() as *mut _,
-            &mut parent,
-        )
-    };
-    if kr != kIOReturnSuccess || parent == 0 {
+    let Some(parent) = parent_entry(media) else {
         return false;
-    }
-    let ok =
-        unsafe { IOObjectConformsTo(parent, BLOCK_STORAGE_DRIVER_CLASS.as_ptr() as *mut _) };
+    };
+    let ok = unsafe { IOObjectConformsTo(parent, BLOCK_STORAGE_DRIVER_CLASS.as_ptr() as *mut _) };
     let _ = IOObjectRelease(parent);
     ok
 }
@@ -242,112 +232,110 @@ fn has_block_storage_parent(media: io_registry_entry_t) -> bool {
 ///
 /// Returns a list of [`Device`] entries suitable for `sufur list`.
 pub fn enumerate() -> Result<Vec<Device>, Error> {
-    unsafe {
-        // 1. Build matching dictionary for IOMedia class.
-        let matching = IOServiceMatching(IOMEDIA_CLASS.as_ptr()).ok_or_else(|| {
-            Error::platform(
-                ErrorCode::Internal,
-                "IOServiceMatching(IOMedia) returned null",
-            )
-        })?;
+    // 1. Build matching dictionary for IOMedia class.
+    let matching = unsafe { IOServiceMatching(IOMEDIA_CLASS.as_ptr()) }.ok_or_else(|| {
+        Error::platform(
+            ErrorCode::Internal,
+            "IOServiceMatching(IOMedia) returned null",
+        )
+    })?;
 
-        // Convert CFRetained<CFMutableDictionary> → CFRetained<CFDictionary>
-        // (IOServiceGetMatchingServices consumes the dictionary).
-        let matching = CFRetained::<CFDictionary>::from(&matching);
+    // Convert CFRetained<CFMutableDictionary> → CFRetained<CFDictionary>
+    // (IOServiceGetMatchingServices consumes the dictionary).
+    let matching = CFRetained::<CFDictionary>::from(&matching);
 
-        // 2. Get an iterator over matching services.
-        //    Pass 0 as the master port (equivalent to kIOMasterPortDefault /
-        //    MACH_PORT_NULL).
-        let mut iterator: io_iterator_t = 0;
-        let kr = IOServiceGetMatchingServices(0, Some(matching), &mut iterator);
-        if kr != kIOReturnSuccess {
-            return Err(Error::platform(
-                ErrorCode::Internal,
-                format!("IOServiceGetMatchingServices failed: {kr}"),
-            ));
-        }
-        let _iter_guard =
-            IoObject::new(iterator).ok_or_else(|| Error::platform(ErrorCode::Internal, "invalid iterator"))?;
-
-        let mut devices = Vec::new();
-
-        // 3. Iterate IOMedia objects.
-        loop {
-            let media = IOIteratorNext(iterator);
-            if media == 0 {
-                break;
-            }
-            let _media_guard = IoObject::new(media);
-
-            // ── Read core properties ──
-
-            let bsd_name = read_string(media, BSD_NAME_KEY).unwrap_or_default();
-            if bsd_name.is_empty() {
-                continue;
-            }
-
-            // Filter: only removable whole disks.
-            let removable = read_bool(media, REMOVABLE_KEY);
-            if !removable {
-                continue;
-            }
-            let whole = read_bool(media, WHOLE_KEY);
-            if !whole {
-                continue;
-            }
-
-            let size_bytes = read_number(media, SIZE_KEY).unwrap_or(0);
-
-            // Sanity check: parent must be a real block storage driver.
-            if !has_block_storage_parent(media) {
-                continue;
-            }
-
-            // ── Vendor / model (Tier 1: registry properties) ──
-
-            let (mut vendor, mut model) = vendor_and_model(media);
-
-            // ── USB info (Tier 2: IOUSBDeviceInterface descriptors) ──
-
-            let usb_info = usb::get_usb_info(media);
-
-            // Fill in missing vendor/model from USB descriptor data.
-            if vendor.is_empty() {
-                vendor = usb_info
-                    .as_ref()
-                    .and_then(|u| u.manufacturer.clone())
-                    .unwrap_or_default();
-            }
-            if model.is_empty() {
-                model = usb_info
-                    .as_ref()
-                    .and_then(|u| u.product.clone())
-                    .unwrap_or_default();
-            }
-
-            // ── Device ID ──
-            //
-            // Prefer a composite USB identifier (vendor_id:product_id:serial)
-            // analogous to Linux's `ID_SERIAL`.  Fall back to the BSD name
-            // (e.g. "disk2") when USB info is unavailable — matching the
-            // Linux crate's sysname fallback.
-            let device_id = usb_info
-                .as_ref()
-                .and_then(|u| u.composite_id())
-                .unwrap_or_else(|| bsd_name.clone());
-
-            devices.push(Device {
-                id: DeviceId(device_id),
-                path: std::path::PathBuf::from(format!("/dev/{bsd_name}")),
-                vendor,
-                model,
-                size_bytes,
-                removable: true,
-            });
-        }
-
-        Ok(devices)
+    // 2. Get an iterator over matching services.
+    //    Pass 0 as the master port (equivalent to kIOMasterPortDefault /
+    //    MACH_PORT_NULL).
+    let mut iterator: io_iterator_t = 0;
+    let kr = unsafe { IOServiceGetMatchingServices(0, Some(matching), &mut iterator) };
+    if kr != kIOReturnSuccess {
+        return Err(Error::platform(
+            ErrorCode::Internal,
+            format!("IOServiceGetMatchingServices failed: {kr}"),
+        ));
     }
+    let _iter_guard = IoObject::new(iterator)
+        .ok_or_else(|| Error::platform(ErrorCode::Internal, "invalid iterator"))?;
+
+    let mut devices = Vec::new();
+
+    // 3. Iterate IOMedia objects.
+    loop {
+        let media = IOIteratorNext(iterator);
+        if media == 0 {
+            break;
+        }
+        let _media_guard = IoObject::new(media);
+
+        // ── Read core properties ──
+
+        let bsd_name = read_string(media, BSD_NAME_KEY).unwrap_or_default();
+        if bsd_name.is_empty() {
+            continue;
+        }
+
+        // Filter: only removable whole disks.
+        let removable = read_bool(media, REMOVABLE_KEY);
+        if !removable {
+            continue;
+        }
+        let whole = read_bool(media, WHOLE_KEY);
+        if !whole {
+            continue;
+        }
+
+        let size_bytes = read_number(media, SIZE_KEY).unwrap_or(0);
+
+        // Sanity check: parent must be a real block storage driver.
+        if !has_block_storage_parent(media) {
+            continue;
+        }
+
+        // ── Vendor / model (Tier 1: registry properties) ──
+
+        let (mut vendor, mut model) = vendor_and_model(media);
+
+        // ── USB info (Tier 2: IOUSBDeviceInterface descriptors) ──
+
+        let usb_info = usb::get_usb_info(media);
+
+        // Fill in missing vendor/model from USB descriptor data.
+        if vendor.is_empty() {
+            vendor = usb_info
+                .as_ref()
+                .and_then(|u| u.manufacturer.clone())
+                .unwrap_or_default();
+        }
+        if model.is_empty() {
+            model = usb_info
+                .as_ref()
+                .and_then(|u| u.product.clone())
+                .unwrap_or_default();
+        }
+
+        // ── Device ID ──
+        //
+        // Prefer a composite USB identifier (vendor_id:product_id:serial)
+        // analogous to Linux's `ID_SERIAL`.  Fall back to the BSD name
+        // (e.g. "disk2") when USB info is unavailable — matching the
+        // Linux crate's sysname fallback.
+        let device_id = usb_info
+            .as_ref()
+            .and_then(|u| u.composite_id())
+            .unwrap_or_else(|| bsd_name.clone());
+
+        devices.push(Device {
+            id: DeviceId(device_id),
+            path: std::path::PathBuf::from(format!("/dev/{bsd_name}")),
+            vendor,
+            model,
+            size_bytes,
+            removable: true,
+        });
+    }
+
+    Ok(devices)
 }
 
 // ──────────────────────────────────────────────────────────────────────

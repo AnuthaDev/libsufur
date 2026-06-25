@@ -24,9 +24,8 @@ use std::ffi::CStr;
 
 use objc2_core_foundation::{CFNumber, CFString};
 use objc2_io_kit::{
-    IOObjectConformsTo, IOObjectRelease, IORegistryEntryCreateCFProperty,
-    IORegistryEntryGetParentEntry, io_registry_entry_t, kIOReturnSuccess,
-    kIOServicePlane,
+    io_registry_entry_t, kIOReturnSuccess, kIOServicePlane, IOObjectConformsTo, IOObjectRelease,
+    IORegistryEntryCreateCFProperty, IORegistryEntryGetParentEntry,
 };
 
 // ──────────────────────────────────────────────────────────────────────
@@ -136,11 +135,7 @@ fn find_usb_ancestor(entry: io_registry_entry_t) -> Option<io_registry_entry_t> 
         // Walk to parent
         let mut parent: io_registry_entry_t = 0;
         let kr = unsafe {
-            IORegistryEntryGetParentEntry(
-                current,
-                kIOServicePlane.as_ptr() as *mut _,
-                &mut parent,
-            )
+            IORegistryEntryGetParentEntry(current, kIOServicePlane.as_ptr() as *mut _, &mut parent)
         };
         if kr != kIOReturnSuccess || parent == 0 {
             break;
@@ -341,10 +336,7 @@ mod tests {
     #[test]
     fn usb_class_constants() {
         assert_eq!(IOUSB_DEVICE_CLASS.to_str().unwrap(), "IOUSBDevice");
-        assert_eq!(
-            IOUSB_HOST_DEVICE_CLASS.to_str().unwrap(),
-            "IOUSBHostDevice"
-        );
+        assert_eq!(IOUSB_HOST_DEVICE_CLASS.to_str().unwrap(), "IOUSBHostDevice");
     }
 
     #[test]

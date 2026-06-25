@@ -8,11 +8,14 @@
 //! See `SUFUR_ARCHITECTURE.md` § "Core Philosophy" and § "Progress &
 //! Cancellation".
 
-pub use sufur_platform::{BlockDevice, Device, DeviceEvent, DeviceId, Error, ErrorCode, Filesystem, FormatOptions, MountHandle, Partition, Platform, Remediation};
+pub use sufur_platform::{
+    BlockDevice, Device, DeviceEvent, DeviceId, Error, ErrorCode, Filesystem, FormatOptions,
+    MountHandle, Partition, Platform, Remediation,
+};
 
-pub mod progress;
 pub mod image;
 pub mod pipeline;
+pub mod progress;
 
 use std::sync::Arc;
 
@@ -33,7 +36,9 @@ pub struct Sufur {
 impl Sufur {
     /// Primary constructor — platform injected for testability.
     pub fn new(platform: impl Platform + 'static) -> Self {
-        Self { platform: Arc::new(platform) }
+        Self {
+            platform: Arc::new(platform),
+        }
     }
 
     /// Convenience constructor — selects the correct platform for the current

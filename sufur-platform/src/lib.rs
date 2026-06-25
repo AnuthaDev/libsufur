@@ -123,12 +123,7 @@ pub trait Platform: Send + Sync {
         fs: Filesystem,
         opts: FormatOptions,
     ) -> Result<(), Error>;
-    fn mount(
-        &self,
-        src: &Path,
-        tgt: &Path,
-        fs: Option<&str>,
-    ) -> Result<MountHandle, Error>;
+    fn mount(&self, src: &Path, tgt: &Path, fs: Option<&str>) -> Result<MountHandle, Error>;
     fn watch_devices(&self) -> BoxStream<'static, DeviceEvent>;
 }
 
@@ -138,7 +133,9 @@ pub trait Platform: Send + Sync {
 
 /// Machine-actionable error codes.  These map 1:1 to the `code` field in the
 /// CLI / helper NDJSON error envelope (see architecture § "CLI Interface").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, thiserror::Error, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
     #[error("device busy")]

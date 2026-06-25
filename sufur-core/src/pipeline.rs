@@ -7,9 +7,12 @@
 
 use std::path::Path;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::{Error, progress::{ProgressEvent, ProgressHandler}};
+use crate::{
+    progress::{ProgressEvent, ProgressHandler},
+    Error,
+};
 
 /// Declarative job specification (YAML/JSON), consumed by `sufur apply-job`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,11 +52,17 @@ pub struct Layout {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum PartitionScheme { Gpt, Mbr }
+pub enum PartitionScheme {
+    Gpt,
+    Mbr,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum TargetSystem { Uefi, Bios }
+pub enum TargetSystem {
+    Uefi,
+    Bios,
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct JobOptions {
