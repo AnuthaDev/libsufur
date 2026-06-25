@@ -72,7 +72,7 @@
 | `sufur-core` | lib | Domain logic, types, image analysis, create pipeline |
 | `sufur-platform` | lib | Platform trait definitions (PAL) |
 | `sufur-linux` | lib | Linux implementation: udev, libfdisk, mount |
-| `sufur-macos` | lib | macOS implementation: IOKit, diskutil |
+| `sufur-macos` | lib | macOS implementation: IOKit enumeration (direct, no `diskutil` shell-out); partition/format/mount still pending |
 | `sufur-windows` | lib | Windows implementation: SetupAPI, VDS (optional) |
 | `sufur-fs` | lib | Filesystem creation via statically linked C libs (ntfs-3g, dosfstools, exfatprogs) |
 | `sufur-wim` | lib | WIM extraction and BCD hive editing via statically linked wimlib and libhivex; Windows To Go |
@@ -808,10 +808,16 @@ cargo +nightly fuzz run analyze_wim
 - End-to-end write test on Linux
 
 ### Phase 5 — macOS (2 weeks)
-- `sufur-macos`: IOKit enumeration, diskutil partition/format, mount
-- Gate Windows-specific features behind `#[cfg(target_os = "linux")]`
-- Linux ISO creation tested on macOS
-- macOS limitations documented
+
+**Status:** Device enumeration implemented and verified on Apple Silicon (macOS 26.5) with real USB hardware. Partition/format/mount still pending.
+
+- [x] `sufur-macos`: IOKit enumeration via `IOServiceMatching("IOMedia")` — direct framework calls, no `diskutil`/`ioreg`/`system_profiler` shell-out (see [macOS Device Enumeration](#macos-device-enumeration))
+- [x] `sufur-core::for_current_platform()` wired for `cfg(target_os = "macos")`
+- [x] Cross-compiles to empty rlib on non-macOS via `#![cfg(target_os = "macos")]`
+- [ ] Partition / format / mount (still pending — will require `diskutil` or vendored formatters)
+- [x] `descriptor_usb_info` fallback via `IOUSBDeviceInterface` — control-transfer-based USB string descriptor extraction (see [USB Metadata Fallback](#usb-metadata-fallback))
+- [ ] Linux ISO creation tested on macOS
+- [ ] macOS limitations documented
 
 ### Phase 6 — Web & WASM (2 weeks)
 - `sufur-wasm`: refactor image analysis to `Read + Seek`; compile to WASM
@@ -838,6 +844,9 @@ cargo +nightly fuzz run analyze_wim
 | Qt privilege model | Decided | Privileged execution occurs in `sufur-helper`; GUI remains unprivileged |
 | config.h generation environment | Decided | Generated on Ubuntu 22.04 LTS (Linux) and macOS 14 Sonoma; must be regenerated on submodule bumps |
 | Job format versioning | Decided | `version: 1` field required; parser rejects unknown versions with a clear error |
+| macOS partition/format/mount | Pending | Phase 5 device enumeration done; write path still needs `diskutil` or vendored formatters + FDA check (see [macOS: TCC and Full Disk Access](#macos-tcc-and-full-disk-access)) |
+| macOS USB descriptor fallback | Implemented | `descriptor_usb_info` (Approach B via `IOUSBDeviceInterface`) is implemented as a fallback to registry properties (Approach A); UUID constants defined manually via `CFUUID::constant_uuid_with_bytes` (see [USB Metadata Fallback](#usb-metadata-fallback)) |
+| macOS hotplug events | Not yet designed | `Platform::watch_devices()` on macOS needs `IOServiceAddMatchingNotification` run-loop integration |
 
 ### macOS: TCC and Full Disk Access
 
@@ -855,6 +864,88 @@ The required approach for macOS:
 4. `diskutil unmountDisk /dev/diskN` must be called before opening the raw device, even with FDA
 
 This is mandatory from day one of macOS support (Phase 5+). The `PrivilegedPlatform` trait for macOS must check for FDA at startup and surface a typed `Error::PermissionDenied { reason: "Full Disk Access required", deep_link: "..." }` before attempting any device I/O.
+
+### macOS Device Enumeration
+
+`list_devices` on macOS is implemented via direct IOKit / CoreFoundation framework calls — **no shell-out** to `diskutil`, `ioreg`, or `system_profiler`. This matches the Linux crate's direct-udev/sysfs approach and keeps `sufur-macos` self-contained.
+
+**Verified** on Apple Silicon (macOS 26.5, `aarch64-apple-darwin`) against a Kingston DataTraveler 3.0 USB mass-storage device. All `Device` fields populated correctly.
+
+**Bindings:** `objc2-io-kit` 0.3.2 + `objc2-core-foundation` 0.3.2 — single binding ecosystem with `CFRetained<T>` ownership. Feature flags: `objc2-io-kit` = `libc, usb, USB, AppleUSBDefinitions, IOUSBLib`; `objc2-core-foundation` = `CFDictionary, CFString, CFNumber` (note: `CFBoolean` is exposed via the `CFNumber` feature, not a separate one).
+
+**Enumeration algorithm (`sufur-macos/src/iokit.rs`):**
+
+1. `IOServiceMatching("IOMedia")` → matching dictionary
+2. `IOServiceGetMatchingServices(kIOMasterPortDefault, ...)` → `io_iterator_t`
+3. For each `IOMedia` object (`IOIteratorNext`):
+   - Read `BSD Name` → `/dev/diskN` path
+   - Read `Removable` (CFBoolean) and `Whole` (CFBoolean) — filter to `removable && whole`
+   - Read `Size` (CFNumber) → `size_bytes`
+   - `has_block_storage_parent`: confirm immediate parent conforms to `IOBlockStorageDriver` (rejects virtual/synthetic IOMedia objects)
+   - Walk up the `IOService` plane to fill `vendor` / `model` (see below)
+   - Walk up to find a `IOUSBHostDevice` / `IOUSBDevice` ancestor for USB metadata (see below)
+   - `DeviceId` = composite USB ID (`"vid:pid:serial"`) when available, else BSD name fallback (analogous to Linux's `ID_SERIAL` → sysname fallback)
+4. Each IOKit object is owned by an `IoObject` RAII guard that calls `IOObjectRelease` on drop; intermediate parents walked during the vendor/model search are released as the walk progresses, leaving the original `media` entry to its caller-owned guard.
+
+**Vendor / model extraction — two tiers:**
+
+- **Tier 1 (registry properties, primary):** Walk up the `IOService` plane. On each ancestor, try (a) the `"Device Characteristics"` dictionary → `"Vendor Name"` / `"Product Name"`, then (b) `"USB Vendor Name"` / `"USB Product Name"` directly. Stops when both are non-empty or `MAX_PARENT_DEPTH` (32) is exhausted.
+- **Tier 2 (USB descriptors, fallback):** `descriptor_usb_info` in `sufur-macos/src/usb.rs` obtains the `IOUSBDeviceInterface` COM vtable via `IOCreatePlugInInterfaceForService` and issues control transfers (`DeviceRequest`) to read USB string descriptors directly from the device — no `USBDeviceOpen` needed (string descriptors are readable even when a kernel driver has claimed the device; see <https://nachtimwald.com/2020/12/06/macos-usb-enumeration-in-c/>). See [USB Metadata Fallback](#usb-metadata-fallback).
+
+**Verified field population** (Kingston DataTraveler 3.0):
+
+| Field | Value | Source |
+|-------|-------|--------|
+| `id` | `0951:1666:E0D55EA5232E1770C828027F` | `UsbInfo::composite_id()` from `idVendor` / `idProduct` / `USB Serial Number` on `IOUSBHostDevice` |
+| `path` | `/dev/disk4` | `IOMedia` `BSD Name` |
+| `vendor` | `Kingston` | `USB Vendor Name` on `IOUSBHostDevice` ancestor (Tier 1) |
+| `model` | `DataTraveler 3.0` | `USB Product Name` on `IOUSBHostDevice` ancestor (Tier 1) |
+| `size_bytes` | `30995907072` | `IOMedia` `Size` |
+| `removable` | `true` | `IOMedia` `Removable` |
+
+#### Apple Silicon Registry Note
+
+On Apple Silicon, the `"Device Characteristics"` dictionary does **not** appear in the IOKit registry for USB storage devices (`ioreg -p IOService -r -l | grep 'Device Characteristics'` returns nothing). Vendor/model data therefore comes entirely from the Tier 1 fallback path: `"USB Vendor Name"` / `"USB Product Name"` on the `IOUSBHostDevice` ancestor. The `read_dictionary` / `dict_string` codepath compiles and is correct (same pattern as `sysinfo`'s `gpu.rs`), but is only exercised on Intel Macs with SATA SSDs that populate `Device Characteristics`. The implementation is forward-compatible: no change is needed when a device with `Device Characteristics` is encountered.
+
+#### USB Metadata Fallback
+
+`descriptor_usb_info` (Approach B) is **implemented** as a fallback to the registry-properties path (Approach A). It is triggered only when registry data is incomplete (e.g., `USB Vendor Name` present but `USB Serial Number` absent, or no `IOUSBHostDevice` ancestor found).
+
+**Flow:**
+
+1. Find the `IOUSBDevice` / `IOUSBHostDevice` ancestor via `find_usb_ancestor` (reused from Approach A)
+2. `IOCreatePlugInInterfaceForService(usb_service, kIOUSBDeviceUserClientTypeID, kIOCFPlugInInterfaceID, ...)` → `IOCFPlugInInterface`
+3. `QueryInterface(plug_in, kIOUSBDeviceInterfaceID, ...)` → `IOUSBDeviceInterface` vtable
+4. `IODestroyPlugInInterface(plug_in)` — release the plugin, keep the device interface
+5. `GetDeviceVendor` / `GetDeviceProduct` — read numeric VID/PID (no device open needed)
+6. `USBGetManufacturerStringIndex` / `USBGetProductStringIndex` / `USBGetSerialNumberStringIndex` → string descriptor indices (u8)
+7. For each index, `DeviceRequest` with a standard USB GET_DESCRIPTOR control transfer (`bmRequestType=0x80`, `bRequest=0x06`, `wValue=(0x03<<8)|idx`, `wIndex=0x0409` for en-US) → raw descriptor
+8. Parse: byte 0 = total length, byte 1 = type (0x03 = string), bytes 2+ = UTF-16LE → convert to UTF-8 via `String::from_utf16_lossy`
+9. `Release` the device interface
+
+**UUID constants:** `objc2-io-kit` does not export `kIOUSBDeviceUserClientTypeID`, `kIOCFPlugInInterfaceID`, or `kIOUSBDeviceInterfaceID` (they are skipped in the binding's `translation-config.toml`). They are constructed at runtime from their byte values (sourced from `IOUSBLib.h` / `IOCFPlugIn.h`) via `CFUUID::constant_uuid_with_bytes`:
+
+| Constant | Byte values |
+|----------|-------------|
+| `kIOUSBDeviceUserClientTypeID` | `9d c7 b7 80 9e c0 11 d4 a5 4f 00 0a 27 05 28 61` |
+| `kIOCFPlugInInterfaceID` | `c2 44 e8 58 10 9c 11 d4 91 d4 00 50 e4 c6 42 6f` |
+| `kIOUSBDeviceInterfaceID` (= `kIOUSBDeviceInterfaceID100`) | `5c 81 87 d0 9e f3 11 d4 8b 45 00 0a 27 05 28 61` |
+
+**Merge strategy:** `get_usb_info` tries Approach A first. If any of `manufacturer`, `product`, or `serial` is `None`, it calls `descriptor_usb_info` and fills gaps — registry values take priority, descriptor values fill only the missing fields. This avoids unnecessary device I/O when the registry is complete while still recovering full metadata for devices with sparse registry properties.
+
+#### Cross-Platform Build Note
+
+Both `sufur-linux` and `sufur-macos` are crate-level cfg-gated (`#![cfg(target_os = "...")]`) and their platform-specific dependencies are target-gated in their `Cargo.toml` files. This means `cargo build --workspace` and `cargo clippy --workspace` work on **both** Linux and macOS — on each platform, the other platform's crate compiles to an empty rlib and its dependencies (e.g. `libudev-sys`, `objc2-io-kit`) are never fetched.
+
+```sh
+# On Linux:
+cargo build --workspace
+cargo test  --workspace
+
+# On macOS:
+cargo build --workspace
+cargo test  --workspace
+```
 
 ### Windows: Progress Channel for Elevated Process
 
