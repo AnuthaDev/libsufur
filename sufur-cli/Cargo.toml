@@ -1,0 +1,18 @@
+[package]
+name = "sufur-cli"
+description = "Sufur CLI — the universal out-of-process interface (scripts, CI, agents)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "sufur"
+path = "src/main.rs"
+
+[dependencies]
+sufur-core = { path = "../sufur-core" }
+sufur-platform = { path = "../sufur-platform" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true

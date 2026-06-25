@@ -1,0 +1,20 @@
+[package]
+name = "sufur-linux"
+description = "Linux platform implementation for Sufur (udev, libfdisk, mount)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sufur-platform = { path = "../sufur-platform" }
+thiserror.workspace = true
+futures.workspace = true
+udev = { workspace = true, optional = true }
+
+[features]
+default = ["udev"]
+udev = ["dep:udev"]
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "sufur-core"
+description = "Domain logic, image analysis, and create pipeline for Sufur"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sufur-platform = { path = "../sufur-platform" }
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# `for_current_platform()` selects the concrete platform impl for the host OS.
+# Only Linux is wired up in this scaffold.
+[target.'cfg(target_os = "linux")'.dependencies]
+sufur-linux = { path = "../sufur-linux" }

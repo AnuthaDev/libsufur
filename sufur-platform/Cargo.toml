@@ -1,0 +1,12 @@
+[package]
+name = "sufur-platform"
+description = "Platform Abstraction Layer (PAL) trait definitions for Sufur"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+futures.workspace = true
